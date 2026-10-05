@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  全プロジェクト（DisplayRescueCore / DisplayRescue / 今後の GUI）に共通のビルド設定。
+  各 .vcxproj の PropertySheets から読み込む（Microsoft.Cpp.props の後なので、ここに書いた値が既定値に勝つ）。
+  ConfigurationType・PlatformToolset など、Microsoft.Cpp.props より前に決める必要があるものは各 .vcxproj に書く。
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- 出力（exe / lib）は全プロジェクトで x64\<構成>\ にそろえる（CI と publish.ps1 がこの場所を見る） -->
+    <OutDir>$(MSBuildThisFileDirectory)$(Platform)\$(Configuration)\</OutDir>
+    <!-- 中間ファイルはプロジェクトごとに分ける。同じフォルダに複数の .vcxproj があるので、分けないと vc145.pdb などがぶつかる -->
+    <IntDir>$(MSBuildThisFileDirectory)$(Platform)\$(Configuration)\obj\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <!-- include は src からの相対で書く（#include "common/Log.h"） -->
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <!-- ランタイムは静的リンク（/MT）。配布先に VC++ 再頒布可能パッケージが無くても動くように。lib と exe で必ずそろえる -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>

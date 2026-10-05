@@ -1,0 +1,83 @@
+# タグ（v1.0.0 など）を push すると、Release ビルド → zip → Release の下書きまでを作る。
+# 手動実行（workflow_dispatch）ではビルドと zip までで、成果物は Actions の Artifacts に置く（Release は作らない）
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release の下書きを作るため
+
+jobs:
+  build:
+    # windows-2025 は 2026-06 から Visual Studio 2026（MSBuild 18 / v145）入り
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: microsoft/setup-msbuild@v3
+
+      - name: Restore NuGet packages (WIL)
+        run: msbuild DisplayRescue.slnx /t:restore /p:RestorePackagesConfig=true
+
+      # DisplayRescueCore.lib → DisplayRescue.exe（設定画面。利用者が開く）と DisplayRescueService.exe（サービス本体・CLI）
+      - name: Build (Release x64)
+        run: msbuild DisplayRescue.slnx /p:Configuration=Release /p:Platform=x64 /m
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $exe = 'x64\Release\DisplayRescueService.exe'
+          $version = (Get-Item $exe).VersionInfo.ProductVersion
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "DisplayRescue $version"
+          # タグから出すときは、タグと src/Version.h のバージョンが一致していなければ止める
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $tag = $env:GITHUB_REF_NAME.TrimStart('v')
+            if ($tag -ne $version) { throw "Tag v$tag does not match the exe version $version (src/Version.h)" }
+          }
+
+      - name: Check dependencies (no VC++ runtime DLLs)
+        shell: pwsh
+        run: |
+          $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+            Where-Object FullName -like '*Hostx64\x64*' | Select-Object -First 1
+          foreach ($exe in 'x64\Release\DisplayRescueService.exe', 'x64\Release\DisplayRescue.exe') {
+            $deps = & $dumpbin.FullName /dependents $exe | Select-String '\.dll' | ForEach-Object { $_.Line.Trim() }
+            Write-Host "$exe : $($deps -join ', ')"
+            $bad = $deps | Where-Object { $_ -match '^(VCRUNTIME|MSVCP|UCRTBASE|api-ms-win-crt)' }
+            if ($bad) { throw "$exe depends on the VC++ runtime: $($bad -join ', ')" }
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $name = "DisplayRescue-$version-x64"
+          New-Item -ItemType Directory -Force "dist\$name" | Out-Null
+          Copy-Item x64\Release\DisplayRescueService.exe, x64\Release\DisplayRescue.exe, README.md, LICENSE "dist\$name"
+          Compress-Archive -Path "dist\$name\*" -DestinationPath "dist\$name.zip"
+          $hash = (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Set-Content -Encoding ascii "dist\$name.zip.sha256"
+          Get-Content "dist\$name.zip.sha256"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DisplayRescue-${{ steps.version.outputs.version }}-x64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          gh release create $env:GITHUB_REF_NAME `
+            "dist/DisplayRescue-$version-x64.zip" "dist/DisplayRescue-$version-x64.zip.sha256" `
+            --draft --title "DisplayRescue $version" --generate-notes

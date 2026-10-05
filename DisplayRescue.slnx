@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="DisplayRescueService.vcxproj" Id="be08f70a-547e-49d5-968a-e2c788bfb350" />
+  <Project Path="DisplayRescueCore.vcxproj" Id="8911c725-935d-4601-bc4f-650f4e91582e" />
+  <Project Path="DisplayRescue.vcxproj" Id="cdc52263-6aef-48d0-81bb-1c1eec66aa5f" />
+</Solution>

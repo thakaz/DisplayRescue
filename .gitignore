@@ -1,0 +1,16 @@
+# Visual Studio
+.vs/
+.vscode/
+*.user
+
+# ビルド出力（exe / lib / pdb と中間ファイル。DisplayRescue.Common.props で x64\<構成>\ にまとめている）
+x64/
+
+# NuGet（packages.config から復元する）
+packages/
+
+# ローカル専用（作業用のメモなど）
+.local/
+
+# Visual Studio のリソースエディタが作る中間ファイル
+*.aps

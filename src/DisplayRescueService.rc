@@ -1,0 +1,35 @@
+// exe のバージョン情報（エクスプローラーのプロパティ →「詳細」に出る）
+#pragma code_page(65001)
+
+#include <windows.h>
+#include "Version.h"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    DR_VERSION_MAJOR, DR_VERSION_MINOR, DR_VERSION_PATCH, 0
+ PRODUCTVERSION DR_VERSION_MAJOR, DR_VERSION_MINOR, DR_VERSION_PATCH, 0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 0411 = 日本語、04B0 = Unicode（1200）。下の Translation と組にする
+        BLOCK "041104B0"
+        BEGIN
+            VALUE "CompanyName",      "thakaz"
+            VALUE "FileDescription",  "DisplayRescue - ログイン画面でも、キー一発で画面構成を戻す"
+            VALUE "FileVersion",      DR_VERSION_STRING
+            VALUE "InternalName",     "DisplayRescueService"
+            VALUE "LegalCopyright",   "Copyright (c) 2026 thakaz"
+            VALUE "OriginalFilename", "DisplayRescueService.exe"
+            VALUE "ProductName",      "DisplayRescue"
+            VALUE "ProductVersion",   DR_VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0411, 1200
+    END
+END

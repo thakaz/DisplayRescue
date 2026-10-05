@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  設定 GUI のマニフェスト（リンカが作る部分と合成される）。
+  管理者の要求（requestedExecutionLevel）は .vcxproj の UACExecutionLevel でリンカに書かせる。
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+  <!-- コモンコントロール v6 を使う。これが無いとボタンや入力欄が Windows 95 風の立体的な見た目になる -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
+                        processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*" />
+    </dependentAssembly>
+  </dependency>
+
+  <!-- モニタごとの DPI に自分で対応すると宣言する（PerMonitorV2）。無いと高 DPI のモニタで、OS が拡大してぼやける。
+       ダイアログはダイアログ単位で配置しているので、DPI が変わると OS が配置とフォントを作り直してくれる -->
+  <asmv3:application>
+    <asmv3:windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+    </asmv3:windowsSettings>
+  </asmv3:application>
+
+  <!-- Windows 10 / 11 向けと宣言する（無いと一部の API が古い Windows 向けの振る舞いをする） -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+</assembly>
