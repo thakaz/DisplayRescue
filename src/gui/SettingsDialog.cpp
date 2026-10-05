@@ -230,7 +230,7 @@ namespace {
 		ShowMessage(dialog, std::format(L"「{}」を{}にします。「OK」か「適用」で保存します。", DisplayName(changed), config::FormatHotkey(hotkey)));
 	}
 
-	// 入力欄を既定の割り当て（Ctrl+Alt+F9〜F12）に戻す。「外す」と同じく、保存は OK か適用を押したとき
+	// 入力欄を既定の割り当て（Ctrl+Alt+F8〜F11）に戻す。「外す」と同じく、保存は OK か適用を押したとき
 	void OnResetDefaults(HWND dialog) {
 		const auto defaults = config::DefaultBindings();
 		for (const auto topology : ccd::AllTopologies()) {

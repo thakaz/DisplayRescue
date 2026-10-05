@@ -4,7 +4,7 @@
 // .rc のリソースコンパイラからも読むので、C++ の構文（constexpr など）は使わずマクロだけで書く
 #define DR_VERSION_MAJOR 1
 #define DR_VERSION_MINOR 0
-#define DR_VERSION_PATCH 0
+#define DR_VERSION_PATCH 1
 
 // 数字のマクロを "1.0.0" のような文字列リテラルにする（# は 2 段階で展開しないと、マクロの名前そのものが文字列になる）
 #define DR_STRINGIFY_(x) #x

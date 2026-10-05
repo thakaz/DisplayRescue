@@ -60,7 +60,7 @@ namespace {
 		L"  DisplayRescueService version              バージョンを表示する\n"
 		L"\n"
 		L"操作: extend(拡張) / clone(複製) / internal(メインのみ) / external(サブのみ)\n"
-		L"既定のキー: Ctrl+Alt+F9で拡張、Ctrl+Alt+F10で複製、Ctrl+Alt+F11でメインのみ、Ctrl+Alt+F12でサブのみ\n";
+		L"既定のキー: Ctrl+Alt+F8で拡張、Ctrl+Alt+F9で複製、Ctrl+Alt+F10でメインのみ、Ctrl+Alt+F11でサブのみ\n";
 
 	//catch(...)の中で呼ぶ。例外をHRESULTにしてメッセージを出し、終了コードを返す。
 	int ReportCaughtError(std::wstring_view what) {

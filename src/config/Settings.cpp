@@ -39,10 +39,10 @@ namespace rescue::config {
 	std::vector<Binding> DefaultBindings() {
 		constexpr UINT kCtrlAlt = MOD_CONTROL | MOD_ALT;
 		return {
-			{ ccd::Topology::Extend,	{ kCtrlAlt, VK_F9 } },
-			{ ccd::Topology::Clone,		{ kCtrlAlt, VK_F10 } },
-			{ ccd::Topology::Internal,	{ kCtrlAlt, VK_F11 } },
-			{ ccd::Topology::External,	{ kCtrlAlt, VK_F12 } },
+			{ ccd::Topology::Extend,	{ kCtrlAlt, VK_F8 } },
+			{ ccd::Topology::Clone,		{ kCtrlAlt, VK_F9 } },
+			{ ccd::Topology::Internal,	{ kCtrlAlt, VK_F10 } },
+			{ ccd::Topology::External,	{ kCtrlAlt, VK_F11 } },
 		};
 	}
 

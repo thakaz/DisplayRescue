@@ -16,7 +16,7 @@ namespace rescue::config {
 		bool operator==(const Binding&) const = default;
 	};
 
-	// 何も設定していないときの割り当て（Ctrl+Alt+F9〜F12）
+	// 何も設定していないときの割り当て（Ctrl+Alt+F8〜F11）。1.0.0 は F9〜F12 だったが、F12 はデバッガ用に予約されていてホットキーに登録すべきでない（RegisterHotKey のドキュメント）ので 1.0.1 で 1 つずらした
 	std::vector<Binding> DefaultBindings();
 
 	// HKLM\SOFTWARE\DisplayRescue\Bindings から読む。一般ユーザーでも読める。

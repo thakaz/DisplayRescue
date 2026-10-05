@@ -148,7 +148,7 @@ namespace {
 	//説明文と異常終了した時の動き(回復オプション)を設定
 	void ConfigureService(SC_HANDLE service) {
 		//lpDescriptionは書き換え可能なLPWSTR(const が付いていない)なので、リテラルではなく配列に入れて渡す
-		wchar_t descriptionText[] = L"画面が映らないときでも、ログイン画面・ロック画面を含めて、割り当てたキー(既定はCtrl+Alt+F9〜F12)でディスプレイ構成を切り替えます。";
+		wchar_t descriptionText[] = L"画面が映らないときでも、ログイン画面・ロック画面を含めて、割り当てたキー(既定はCtrl+Alt+F8〜F11)でディスプレイ構成を切り替えます。";
 		SERVICE_DESCRIPTIONW description{ .lpDescription = descriptionText };
 		THROW_IF_WIN32_BOOL_FALSE(ChangeServiceConfig2W(service, SERVICE_CONFIG_DESCRIPTION, &description));
 

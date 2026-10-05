@@ -61,7 +61,8 @@ jobs:
           Copy-Item x64\Release\DisplayRescueService.exe, x64\Release\DisplayRescue.exe, README.md, LICENSE "dist\$name"
           Compress-Archive -Path "dist\$name\*" -DestinationPath "dist\$name.zip"
           $hash = (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name.zip" | Set-Content -Encoding ascii "dist\$name.zip.sha256"
+          # 改行は LF にする（Set-Content だと CRLF になり、sha256sum -c がファイル名の末尾の \r で失敗する）
+          [IO.File]::WriteAllText("$PWD\dist\$name.zip.sha256", "$hash  $name.zip`n")
           Get-Content "dist\$name.zip.sha256"
 
       - uses: actions/upload-artifact@v7

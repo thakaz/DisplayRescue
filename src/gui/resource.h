@@ -43,4 +43,4 @@
 #define IDC_INSTALL             1023    // インストール / 再インストール
 #define IDC_UNINSTALL           1024
 #define IDC_VERSION             1025    // この設定画面の版とインストール済みの版
-#define IDC_RESET_DEFAULTS      1026    // 入力欄を既定の割り当て（Ctrl+Alt+F9〜F12）に戻す
+#define IDC_RESET_DEFAULTS      1026    // 入力欄を既定の割り当て（Ctrl+Alt+F8〜F11）に戻す
