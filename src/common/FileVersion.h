@@ -6,7 +6,7 @@
 #include <string>
 
 namespace rescue {
-	// 版（major.minor.patch）。大小を比べられる
+	// バージョン（major.minor.patch）。大小を比較できる
 	struct FileVersion {
 		unsigned major = 0;
 		unsigned minor = 0;
@@ -18,7 +18,7 @@ namespace rescue {
 		std::wstring ToString() const;
 	};
 
-	// この exe 自身の版（src/Version.h）
+	// この exe 自身のバージョン（src/Version.h）
 	FileVersion CurrentVersion();
 
 	// exe に埋め込んだバージョン情報（.rc の VERSIONINFO の FILEVERSION）を読む。ファイルが無い・情報が無ければ nullopt

@@ -14,3 +14,7 @@ packages/
 
 # Visual Studio のリソースエディタが作る中間ファイル
 *.aps
+
+# 設定アプリ（C#）の中間ファイル（出力は x64\<構成>\ だが、obj は既定のまま src/settings/obj）
+src/settings/obj/
+src/settings/bin/

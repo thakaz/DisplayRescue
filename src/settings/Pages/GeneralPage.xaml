@@ -1,0 +1,21 @@
+<!-- 全般: サービスの状態・バージョン・インストール -->
+<UserControl x:Class="DisplayRescue.Settings.Pages.GeneralPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <TextBlock Text="サービス" FontSize="20" FontWeight="SemiBold" />
+        <TextBlock x:Name="StatusText" Margin="0,8,0,0" TextWrapping="Wrap" />
+        <TextBlock x:Name="VersionText" Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.8" />
+
+        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+            <Button x:Name="InstallButton" MinWidth="140" Padding="16,6" Click="OnInstall" />
+            <Button x:Name="UninstallButton" Content="アンインストール" MinWidth="140" Padding="16,6" Margin="8,0,0,0" Click="OnUninstall" />
+        </StackPanel>
+        <TextBlock Margin="0,8,0,0" Opacity="0.7" TextWrapping="Wrap"
+                   Text="インストールすると、サービス(DisplayRescueService.exe)とマスコット(DisplayRescueMascot.exe)をProgram Filesに置き、ログイン画面でもキーで切り替えられるようにします。この設定アプリは、展開したフォルダから開いて使います。" />
+
+        <!-- インストールの途中経過（CLI の出力） -->
+        <TextBox x:Name="OutputBox" Margin="0,16,0,0" Height="160" IsReadOnly="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" FontFamily="Consolas, BIZ UDGothic" Visibility="Collapsed" />
+    </StackPanel>
+</UserControl>

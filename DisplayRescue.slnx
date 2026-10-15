@@ -1,8 +1,15 @@
 <Solution>
   <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
     <Platform Name="x64" />
   </Configurations>
   <Project Path="DisplayRescueService.vcxproj" Id="be08f70a-547e-49d5-968a-e2c788bfb350" />
   <Project Path="DisplayRescueCore.vcxproj" Id="8911c725-935d-4601-bc4f-650f4e91582e" />
-  <Project Path="DisplayRescue.vcxproj" Id="cdc52263-6aef-48d0-81bb-1c1eec66aa5f" />
+  <Project Path="DisplayRescueInterop.vcxproj" Id="265439fd-1c7d-4769-8837-d31e2d5c4065" />
+  <Project Path="DisplayRescueMascot.vcxproj" Id="c8b66fbe-9671-40a1-ac34-95d69398f023" />
+  <!-- C# の既定のプラットフォームは Any CPU なので、ソリューションの x64 をプロジェクトの x64 に対応させる（書かないと VS が「不明なプロジェクト構成マッピング」と言う） -->
+  <Project Path="src/settings/DisplayRescueSettings.csproj" Id="39e81754-13a8-4e32-af93-7540d175a522">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>

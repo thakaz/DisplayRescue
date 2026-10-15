@@ -2,10 +2,19 @@
 
 #include <Windows.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace rescue {
+	//コマンドラインで受け取った、継承したハンドルの値（10 進。例 "420"）を HANDLE にする。数でない・0 なら nullopt。
+	// 継承したハンドルは子プロセスでも親と同じ値で使用できる（サービスからホットキー監視プロセスとマスコットへ停止イベントを渡すために使う）
+	std::optional<HANDLE> ParseInheritedHandle(const wchar_t* text);
+
+	//そのセッションがロック中か（WTSSessionInfoEx の SessionFlags）。ユーザー不在のログイン画面もロック中になる。
+	//sessionId に WTS_CURRENT_SESSION を渡すと自分のセッション。調べられなければ例外
+	bool IsSessionLocked(DWORD sessionId);
+
 	//大文字小文字を無視して比較する
 	bool EqualsIgnoreCase(std::wstring_view a, std::wstring_view b);
 

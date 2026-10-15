@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DisplayRescueMascot.exe（ロック画面のマスコット）。サービスが置きっぱなしにする（パスワード欄用は SYSTEM・Winlogon、ロック画像用はユーザー＋UIAccess・Default）。
+     描画（D3D11・cgltf・C++/WinRT・WIC）はここだけに入れ、サービス本体（DisplayRescueService.exe）には持たせない（他人の作ったファイルを読む部品を、いつも SYSTEM で動くものに入れないため）。
+     ログ（common/Log）などのために DisplayRescueCore.lib をリンクする（使う .obj だけが入る） -->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{c8b66fbe-9671-40a1-ac34-95d69398f023}</ProjectGuid>
+    <RootNamespace>DisplayRescueMascot</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="DisplayRescue.Common.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- third_party（cgltf）を include できるように。このプロジェクトの中だけで使う -->
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)third_party;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ResourceCompile>
+      <!-- .rc は src\mascot にあるので、src の Version.h を探せるように -->
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <!-- コンソールの窓を出さない（入口は wWinMain） -->
+      <SubSystem>Windows</SubSystem>
+    </Link>
+    <Manifest>
+      <EnableSegmentHeap>true</EnableSegmentHeap>
+    </Manifest>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\mascot\Main.cpp" />
+    <ClCompile Include="src\mascot\Mascot.cpp" />
+    <ClCompile Include="src\mascot\Canvas.cpp" />
+    <ClCompile Include="src\mascot\CgltfImpl.cpp" />
+    <ClCompile Include="src\mascot\GltfMesh.cpp" />
+    <ClCompile Include="src\mascot\ImageDecode.cpp" />
+    <ClCompile Include="src\mascot\Keyframe.cpp" />
+    <ClCompile Include="src\mascot\Skeleton.cpp" />
+    <ClCompile Include="src\mascot\Expression.cpp" />
+    <ClCompile Include="src\mascot\SpringBone.cpp" />
+    <ClCompile Include="src\mascot\SpringSimulator.cpp" />
+    <ClCompile Include="src\mascot\Humanoid.cpp" />
+    <ClCompile Include="src\mascot\Motion.cpp" />
+    <ClCompile Include="src\mascot\MotionPicker.cpp" />
+    <ClCompile Include="src\mascot\MotionSchedule.cpp" />
+    <ClCompile Include="src\mascot\MToon.cpp" />
+    <ClCompile Include="src\mascot\Model.cpp" />
+    <ClCompile Include="src\mascot\SessionLockWatcher.cpp" />
+    <ClCompile Include="src\mascot\PlacementEditor.cpp" />
+    <ClCompile Include="src\mascot\Monitors.cpp" />
+    <ClCompile Include="src\mascot\ShortcutCards.cpp" />
+    <ClCompile Include="src\mascot\AssetFile.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\mascot\Mascot.h" />
+    <ClInclude Include="src\mascot\Canvas.h" />
+    <ClInclude Include="src\mascot\GltfMesh.h" />
+    <ClInclude Include="src\mascot\JsonRead.h" />
+    <ClInclude Include="src\mascot\ImageDecode.h" />
+    <ClInclude Include="src\mascot\Keyframe.h" />
+    <ClInclude Include="src\mascot\Skeleton.h" />
+    <ClInclude Include="src\mascot\Expression.h" />
+    <ClInclude Include="src\mascot\SpringBone.h" />
+    <ClInclude Include="src\mascot\SpringSimulator.h" />
+    <ClInclude Include="src\mascot\Humanoid.h" />
+    <ClInclude Include="src\mascot\Motion.h" />
+    <ClInclude Include="src\mascot\MotionPicker.h" />
+    <ClInclude Include="src\mascot\MotionSchedule.h" />
+    <ClInclude Include="src\mascot\MToon.h" />
+    <ClInclude Include="src\mascot\Model.h" />
+    <ClInclude Include="src\mascot\SessionLockWatcher.h" />
+    <ClInclude Include="src\mascot\PlacementEditor.h" />
+    <ClInclude Include="src\mascot\Monitors.h" />
+    <ClInclude Include="src\mascot\ShortcutCards.h" />
+    <ClInclude Include="src\mascot\AssetFile.h" />
+    <ClInclude Include="src\Version.h" />
+    <ClInclude Include="third_party\cgltf\cgltf.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="src\mascot\DisplayRescueMascot.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+    <None Include="third_party\cgltf\LICENSE" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ビルド順の指定と、DisplayRescueCore.lib の自動リンク（LinkLibraryDependencies は既定で true） -->
+    <ProjectReference Include="DisplayRescueCore.vcxproj">
+      <Project>{8911c725-935d-4601-bc4f-650f4e91582e}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets" Condition="Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets')" />
+  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>このプロジェクトは、このコンピューター上にない NuGet パッケージを参照しています。それらのパッケージをダウンロードするには、[NuGet パッケージの復元] を使用します。詳細については、http://go.microsoft.com/fwlink/?LinkID=322105 を参照してください。見つからないファイルは {0} です。</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Windows.ImplementationLibrary.1.0.260126.7\build\native\Microsoft.Windows.ImplementationLibrary.targets'))" />
+  </Target>
+</Project>

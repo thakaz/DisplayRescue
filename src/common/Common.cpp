@@ -1,8 +1,13 @@
 #include "common/Common.h"
 
-#include <wil/resource.h>	// wil::unique_hlocal_string
+#include <wtsapi32.h>		// WTSQuerySessionInformationW（wil/resource.h より先に include すると wil::unique_wtsmem_ptr が使える）
+#include <wil/resource.h>	// wil::unique_hlocal_string / unique_wtsmem_ptr
+#include <wil/result.h>
 
+#include <cwchar>			// std::wcstoul
 #include <format>
+
+#pragma comment(lib, "wtsapi32.lib")
 
 namespace {
 	// Windows の説明文（FormatMessageW）。取れなければ空。末尾の改行は落とす
@@ -26,6 +31,28 @@ namespace {
 }
 
 namespace rescue {
+
+	std::optional<HANDLE> ParseInheritedHandle(const wchar_t* text)
+	{
+		wchar_t* end = nullptr;
+		const unsigned long value = std::wcstoul(text, &end, 10);	//10進で読む。endは読めなかった最初の文字を指す
+		if (end == text || *end != L'\0' || value == 0) return std::nullopt;
+		return ULongToHandle(value);
+	}
+
+	//Windows 7 / Server 2008 R2 は LOCK と UNLOCK が逆になる不具合があるが、対象外
+	bool IsSessionLocked(DWORD sessionId)
+	{
+		//バッファの型は LPWSTR として宣言されているが、WTSSessionInfoEx を頼むと中身は WTSINFOEXW になる。
+		//WTSFreeMemory で返す必要があるので、受け取ったらすぐ箱に入れる
+		LPWSTR buffer = nullptr;
+		DWORD bytes = 0;
+		THROW_IF_WIN32_BOOL_FALSE(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, sessionId, WTSSessionInfoEx, &buffer, &bytes));
+		const wil::unique_wtsmem_ptr<WTSINFOEXW> info{ reinterpret_cast<WTSINFOEXW*>(buffer) };
+
+		THROW_WIN32_IF(ERROR_INVALID_DATA, info->Level != 1);	//今の Windows は Level 1 しか返さない
+		return info->Data.WTSInfoExLevel1.SessionFlags == WTS_SESSIONSTATE_LOCK;
+	}
 
 	bool EqualsIgnoreCase(std::wstring_view a, std::wstring_view b)
 	{

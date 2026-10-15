@@ -70,7 +70,7 @@ namespace {
 	}
 
 	// ログを書いてよいフォルダか確かめる。無ければ管理者と SYSTEM だけが書ける ACL で作る。
-	// 一般ユーザーの身分では持ち主を Administrators にできないので作れない（＝ログは書かない）
+	// 一般ユーザー権限では所有者を Administrators に設定できないため作成しない（ログも書き込まない）
 	bool PrepareLogDirectory(const std::filesystem::path& dir) noexcept {
 		if (GetFileAttributesW(dir.c_str()) == INVALID_FILE_ATTRIBUTES) {
 			const auto sd = LogDirectorySecurity();
@@ -88,7 +88,6 @@ namespace {
 		std::string utf8(static_cast<size_t>(size), '\0');
 		WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), utf8.data(), size, nullptr, nullptr);
 		return utf8;
-
 	}
 
 	//WILが失敗を検出するたびに呼ばれる。
@@ -191,8 +190,10 @@ namespace rescue {
 			OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
 			owner, nullptr, dacl, nullptr));
 
-		// 4. 締める前に一般ユーザーが置いたかもしれないもの（リンク、一般ユーザーが持ち主のファイル）を取り除く。
-		//    リンクは「リンク自体」を消すだけで、指している先には触らない
+		// 4. 締める前に一般ユーザーが置いたかもしれないもの（リンク、一般ユーザーが持ち主のファイルとフォルダ）を取り除く。
+		//    リンクは「リンク自体」を消すだけで、指している先には触らない。
+		//    一般ユーザーが持ち主のフォルダは、持ち主なので ACL を書き換えられる（締めても中に置き続けられる）。
+		//    空でなくて消せなければ、名前を変えて脇に退ける（マスコットは決まった名前のファイルとフォルダしか読まない）
 		for (const auto& entry : std::filesystem::directory_iterator(dir)) {
 			const auto& path = entry.path();
 			const DWORD attributes = GetFileAttributesW(path.c_str());
@@ -200,7 +201,10 @@ namespace rescue {
 			if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0 && IsOwnedByAdminOrSystem(path)) continue;
 
 			if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
-				RemoveDirectoryW(path.c_str());
+				if (RemoveDirectoryW(path.c_str())) continue;	// リンクのフォルダもこれで消える（MoveFileExW もリンク自体を動かす）
+				auto aside = path;
+				aside += std::format(L".untrusted-{}", GetTickCount64());
+				THROW_IF_WIN32_BOOL_FALSE(MoveFileExW(path.c_str(), aside.c_str(), 0));
 			}
 			else {
 				DeleteFileW(path.c_str());

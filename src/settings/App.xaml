@@ -1,0 +1,7 @@
+<!-- アプリ全体。ThemeMode="System" で Windows の明暗の設定に合わせた Fluent テーマ（.NET 9 から） -->
+<Application x:Class="DisplayRescue.Settings.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="System"
+             ShutdownMode="OnMainWindowClose">
+</Application>

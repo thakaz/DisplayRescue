@@ -9,6 +9,7 @@
 #include <wil/win32_helpers.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <span>
 #include <string>
@@ -23,13 +24,15 @@
 namespace {
 	// 自分自身のexeを起動するコマンドライン: "C:\...\DisplayRescueService.exe" watch 420
 	// パスに空白があっても切れないよう""で囲む。
-	std::wstring BuildCommandLine(std::wstring_view arguments) {
-		const auto exePath = wil::GetModuleFileNameW<std::wstring>();
-		return std::format(L"\"{}\" {}", exePath, arguments);
+	// program があれば、自分と同じフォルダの program: "C:\...\DisplayRescueMascot.exe" 420
+	std::wstring BuildCommandLine(std::wstring_view arguments, std::wstring_view program) {
+		std::filesystem::path exePath{ wil::GetModuleFileNameW<std::wstring>() };
+		if (!program.empty()) exePath = exePath.parent_path() / program;
+		return std::format(L"\"{}\" {}", exePath.wstring(), arguments);
 	}
 
 	//指定したセッションのwinlogon.exe(SYSTEMで動いている)のトークンを開く。
-	//ユーザーがいないログイン画面でもwinlogon.exeが必ずいるので、その身分を借りる。
+	// ユーザー不在のログイン画面にも winlogon.exe は存在するため、そのアクセストークンを複製する。
 	wil::unique_handle OpenWinlogonToken(DWORD sessionId) {
 		//(a)セッション番号付きのプロセス一覧をもらう。一覧のメモリはWTSFreeMemoryで返す必要があるので箱に入れる
 		wil::unique_wtsmem_ptr<WTS_PROCESS_INFOW> processes;
@@ -57,80 +60,56 @@ namespace {
 		return token;
 	}
 
-	//ロック中か。WTSSessionInfoEx の SessionFlags で調べる
-	//(Windows 7 / Server 2008 R2 は LOCK と UNLOCK が逆になる不具合があるが、対象外)
-	bool IsSessionLocked(DWORD sessionId) {
-		//バッファの型は LPWSTR として宣言されているが、WTSSessionInfoEx を頼むと中身は WTSINFOEXW になる。
-		//WTSFreeMemory で返す必要があるので、受け取ったらすぐ箱に入れる
-		LPWSTR buffer = nullptr;
-		DWORD bytes = 0;
-		THROW_IF_WIN32_BOOL_FALSE(WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, sessionId, WTSSessionInfoEx, &buffer, &bytes));
-		const wil::unique_wtsmem_ptr<WTSINFOEXW> info{ reinterpret_cast<WTSINFOEXW*>(buffer) };
-
-		THROW_WIN32_IF(ERROR_INVALID_DATA, info->Level != 1);	//今の Windows は Level 1 しか返さない
-		return info->Data.WTSInfoExLevel1.SessionFlags == WTS_SESSIONSTATE_LOCK;
-	}
-}
-
-namespace rescue::service {
-
-	wil::unique_process_information StartInInputDesktop(std::wstring_view arguments, HANDLE inheritHandle)
-	{
-		//①物理モニタがつながっているセッションの番号。切替中などでないときは0xFFFFFFFF
+	//物理モニタがつながっているセッションの番号
+	DWORD ConsoleSessionId() {
 		const DWORD sessionId = WTSGetActiveConsoleSessionId();
 		THROW_WIN32_IF(ERROR_NO_SUCH_LOGON_SESSION, sessionId == 0xFFFFFFFF);
+		return sessionId;
+	}
 
-		//②借りるトークンと起動先のデスクトップを決める。
-		// ロック中なら、ユーザーがいても winlogon.exeの身分(SYSTEM)でWinlogonデスクトップへ(ロック画面はWinlogonデスクトップ。ユーザー不在のログイン画面もロック中と報告される)。
-		// それ以外は、ユーザーがいればそのユーザーの身分でDefaultデスクトップへ
-		// ユーザーがいない（ログイン画面・RDP)とWTSQueryUserTokenがERROR_NO_TOKEN(1008)になるので、その時だけwinlogon.exeの身分(SYSTEM)でWinlogonデスクトップへ。
-		wil::unique_handle sourceToken;
-		std::wstring desktop;
-		if (IsSessionLocked(sessionId)) {
-			rescue::Log(L"ロック中のため、winlogonの身分でWinlogonデスクトップに起動します");
-			sourceToken = OpenWinlogonToken(sessionId);
-			desktop = L"winsta0\\Winlogon";
-		}
-		else if (WTSQueryUserToken(sessionId, sourceToken.put())) {
-			desktop = L"winsta0\\default";
-		}
-		else {
-			//ERROR_NO_TOKEN以外の失敗は想定外なのでそのまま例外にする。
-			const DWORD error = GetLastError();
-			THROW_WIN32_IF(error, error != ERROR_NO_TOKEN);
-
-			rescue::Log(L"ログオン中のユーザーがいないため、winlogonの身分でWinlogonデスクトップに起動します");
-			sourceToken = OpenWinlogonToken(sessionId);
-			desktop = L"winsta0\\Winlogon";
-		}
-
-		//③自分専用のプライマリトークンにコピーする。アクセス権はCreateEnvironmentBlockとCreateProcessAsUserWが要求するものだけにする
+	// sourceToken を複製し、そのセキュリティコンテキストで desktop に "DisplayRescueService.exe <arguments>" を起動する。
+	// uiAccessがtrueなら(3)と(4)の間でトークンにUIAccessを立てる
+	wil::unique_process_information LaunchWithToken(HANDLE sourceToken, std::wstring desktop, std::wstring_view arguments, HANDLE inheritHandle, bool uiAccess, std::wstring_view program) {
+		// 3. 自分専用のプライマリトークンにコピーする。アクセス権はCreateEnvironmentBlockとCreateProcessAsUserWが要求するものだけにする。
+		// TOKEN_ADJUST_DEFAULTはSetTokenInformation(TokenUIAccess)に必要
 		wil::unique_handle primaryToken;
 		THROW_IF_WIN32_BOOL_FALSE(DuplicateTokenEx(
-			sourceToken.get(),
-			TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY,
-			nullptr,                //新しいトークン自体のACL(誰がこのトークンを開けるか)。nullptrで既定
-			SecurityImpersonation,  //偽装トークンの「偽装の強さ」。プライマリトークンでは使われない(慣例の値)
+			sourceToken,
+			TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | (uiAccess ? TOKEN_ADJUST_DEFAULT : 0),
+			nullptr,				//新しいトークン自体のACL(誰がこのトークンを開けるか)。nullptrで既定
+			SecurityImpersonation,	//偽装トークン(スレッドが一時的に他人になるためのトークン)の「偽装の強さ」。プライマリトークンでは使われない(慣例の値)
 			TokenPrimary,
 			primaryToken.put()));
 
-		//④そのユーザーの環境変数(USERPROFILE,TEMPなど)を作る。
-		// 作らないとエージェントはサービス(SYSTEM)の環境変数を引き継いでしまう。
+		// トークンにUIAccessを立てる。
+		// 普通は「uiAccess="true"のマニフェスト・署名・Program Files」を満たしたexeにAppInfoサービスがこの印をつける。
+		// 印をつけること自体にはSeTcbPrivilegeが要る。LocalSystemのサービスは持っているので、確認を通さずに直接つけられる。
+		// UIAccessの付いたプロセスのウィンドウはZBID_UIACCESSの層に入り、ロック画像(ZBID_LOCK)より上に出られる。
+		// 起動するのは program で限った同じフォルダ（インストール先）の exe だけ。
+		if (uiAccess) {
+			DWORD enable = TRUE;
+			THROW_IF_WIN32_BOOL_FALSE(SetTokenInformation(primaryToken.get(), TokenUIAccess, &enable, sizeof(enable)));
+		}
+
+		// 4. そのユーザーの環境変数(USERPROFILE,TEMPなど)を作る。
+		// 作らないと起動したプロセスはサービス(SYSTEM)の環境変数を引き継いでしまう。
 		wil::unique_environment_block environment;
 		THROW_IF_WIN32_BOOL_FALSE(CreateEnvironmentBlock(environment.put(), primaryToken.get(), FALSE));
 
-		//⑤起動する。lpCommandLineはAPIが解析中に一時的に書き換えることがあるので、
+		// 5. 起動する。lpCommandLineはAPIが解析中に一時的に書き換えることがあるので、
 		//  文字列リテラル(読み取り専用)ではなく書き換え可能なバッファ(std::wstring)を渡す。
-		std::wstring commandLine = BuildCommandLine(arguments);
+		std::wstring commandLine = BuildCommandLine(arguments, program);
 
 		STARTUPINFOEXW startup{};
-		startup.StartupInfo.cb = sizeof(startup);	//cbは構造体の版を伝える欄。EX版の大きさとEXTENDED_STARTUPINFO_PRESENTがそろうと、OSはlpAttributeListまで読む
+		//cbには構造体の大きさを入れる。STARTUPINFOEXWはSTARTUPINFOWの後ろにlpAttributeListを足した大きい版で、
+		//OSはcbがEX版の大きさで、かつflagsにEXTENDED_STARTUPINFO_PRESENTがあるときだけlpAttributeListまで読む
+		startup.StartupInfo.cb = sizeof(startup);
 		startup.StartupInfo.lpDesktop = desktop.data();
 		DWORD flags = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT;
 
-		//⑥継承させるハンドルがあれば「属性リスト」でそれ一つだけに絞る
-		// CreateProcessAsUserWのbInheritHandles=TRUEだけだと、サービスの継承可能なハンドルが全部子にわたってしまう。
-		// 属性リストは大きさが決まっていない構造体なので大きさを聞く→大きさ分のバッファを用意して初期化
+		// 6. 継承させるハンドルがあれば「属性リスト」で、子に渡すのをそれ一つだけに絞る
+		//CreateProcessAsUserWのbInheritHandles=TRUEだけだと、サービスの継承可能なハンドルが全部子にわたってしまう。
+		//属性リストは大きさが決まっていない構造体なので大きさを聞く→大きさ分のバッファを用意して初期化
 		std::vector<std::byte> attributeBuffer;
 		LPPROC_THREAD_ATTRIBUTE_LIST attributes = nullptr;
 		const auto deleteAttributes = wil::scope_exit([&] {if (attributes) DeleteProcThreadAttributeList(attributes); });
@@ -141,13 +120,14 @@ namespace rescue::service {
 			THROW_IF_WIN32_BOOL_FALSE(InitializeProcThreadAttributeList(reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeBuffer.data()), 1, 0, &size));
 			attributes = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeBuffer.data());
 
-			//inheritHandleの場所を渡す。リストはこのアドレスを覚えるだけなので、CreateProcessAsUserWまで生きている変数であるこど。
+			//&inheritHandle(値の置き場所)を渡す。リストは中身をコピーせずアドレスを覚えるだけで、CreateProcessAsUserWがそのとき読みに行く。
+			//だからCreateProcessAsUserWまで生きている変数であること(ここは関数の引数なので最後まで生きている)
 			THROW_IF_WIN32_BOOL_FALSE(
 				UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &inheritHandle, sizeof(inheritHandle), nullptr, nullptr)
 			);
 
 			startup.lpAttributeList = attributes;
-			flags |= EXTENDED_STARTUPINFO_PRESENT;
+			flags |= EXTENDED_STARTUPINFO_PRESENT;	//flags = flags | X の略。そのフラグのビットを立てる
 		}
 
 		wil::unique_process_information process;
@@ -165,5 +145,66 @@ namespace rescue::service {
 			&process));
 
 		return process;
+	}
+}
+
+namespace rescue::service {
+
+	wil::unique_process_information StartInInputDesktop(std::wstring_view arguments, HANDLE inheritHandle, std::wstring_view program)
+	{
+		// 1. 物理モニタがつながっているセッションの番号
+		const DWORD sessionId = ConsoleSessionId();
+
+		// 2. 借りるトークンと起動先のデスクトップを決める。
+		// ロック中は、ユーザーの有無にかかわらず winlogon.exe のアクセストークン（SYSTEM）で Winlogon デスクトップへ起動する。
+		// それ以外は、サインイン中のユーザーのアクセストークンで Default デスクトップへ起動する。
+		// ユーザー不在（ログイン画面・RDP）では WTSQueryUserToken が ERROR_NO_TOKEN (1008) を返すため、その場合だけ winlogon.exe のアクセストークンで Winlogon デスクトップへ起動する。
+		wil::unique_handle sourceToken;
+		std::wstring desktop;
+		if (rescue::IsSessionLocked(sessionId)) {
+			rescue::Log(L"ロック中のため、winlogonのアクセストークンでWinlogonデスクトップに起動します");
+			sourceToken = OpenWinlogonToken(sessionId);
+			desktop = L"winsta0\\Winlogon";
+		}
+		else if (WTSQueryUserToken(sessionId, sourceToken.put())) {
+			desktop = L"winsta0\\default";
+		}
+		else {
+			//ERROR_NO_TOKEN以外の失敗は想定外なのでそのまま例外にする。
+			const DWORD error = GetLastError();
+			THROW_WIN32_IF(error, error != ERROR_NO_TOKEN);
+
+			rescue::Log(L"ログオン中のユーザーがいないため、winlogonのアクセストークンでWinlogonデスクトップに起動します");
+			sourceToken = OpenWinlogonToken(sessionId);
+			desktop = L"winsta0\\Winlogon";
+		}
+
+		// (3)〜(6)
+		return LaunchWithToken(sourceToken.get(), std::move(desktop), arguments, inheritHandle, false, program);
+	}
+
+	// ロック状態に関係なく、ユーザーのアクセストークンで Default に UIAccess 付きで起動する
+	wil::unique_process_information StartInUserDesktopWithUiAccess(std::wstring_view arguments, HANDLE inheritHandle, std::wstring_view program)
+	{
+		const DWORD sessionId = ConsoleSessionId();
+
+		wil::unique_handle sourceToken;
+		THROW_IF_WIN32_BOOL_FALSE(WTSQueryUserToken(sessionId, sourceToken.put()));	//ユーザーがいなければ ERROR_NO_TOKEN
+
+		return LaunchWithToken(sourceToken.get(), L"winsta0\\default", arguments, inheritHandle, true, program);
+	}
+
+	// ロック状態に関係なく、winlogon のアクセストークンで Winlogon に起動する（StartInInputDesktop のロック中と同じ処理）
+	wil::unique_process_information StartInWinlogonDesktop(std::wstring_view arguments, HANDLE inheritHandle, std::wstring_view program)
+	{
+		const DWORD sessionId = ConsoleSessionId();
+		const wil::unique_handle sourceToken = OpenWinlogonToken(sessionId);
+		return LaunchWithToken(sourceToken.get(), L"winsta0\\Winlogon", arguments, inheritHandle, false, program);
+	}
+
+	// コンソールセッションがロック中か（StartInInputDesktop と同じ判定）。マスコットをロック中だけ置くため
+	bool IsConsoleSessionLocked()
+	{
+		return rescue::IsSessionLocked(ConsoleSessionId());
 	}
 }

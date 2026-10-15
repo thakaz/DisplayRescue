@@ -7,7 +7,11 @@ namespace rescue::service {
 
 	// サービスに送れるユーザー定義のコントロールコード（sc.exe control DisplayRescue <番号> でも送れる）。
 	// 128 / 129 は以前の切り替え要求（拡張 / 複製）で使っていた番号なので使わない（古いサービスに送って画面が変わらないように）
-	inline constexpr unsigned long kControlReload = 130;	// キーの割り当てを読み直す（待ち受け役を置き直す）。bind / unbind が送る
+	inline constexpr unsigned long kControlReload = 130;	// 設定を再読み込みする（ホットキー監視プロセスとマスコットを再起動する）。bind / unbind と設定アプリが送る
+
+	// マスコットの exe。サービス本体（DisplayRescueService.exe）と同じフォルダ（インストール先）に置く。install がコピーし、サービスが起動する
+	inline constexpr wchar_t kMascotExeName[] = L"DisplayRescueMascot.exe";
+
 
 	// SCM(サービスコントロールマネージャ)から"DisplayRescueService.exe service"として起動された時の入り口
 	int RunService();
@@ -22,6 +26,6 @@ namespace rescue::service {
 	};
 	ServiceState QueryServiceState();
 
-	// サービスに「キーの割り当てを読み直して」と頼む。サービスが無い・止まっているときは false（何もしない）
+	// サービスに「設定を読み直して」と頼む。サービスが無い・止まっているときは false（何もしない）
 	bool RequestServiceReload();
 }

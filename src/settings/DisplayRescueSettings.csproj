@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    DisplayRescue.exe（設定アプリ。利用者が開く）。C# の WPF。PowerToys の設定アプリと同じ考え方で、設定だけをする。
+    C++ の決まりごとは DisplayRescueInterop.dll を P/Invoke で呼ぶ（Interop/NativeMethods.cs）。
+    ビルドは framework-dependent（.NET が入っている開発機で動く）。配るときは msbuild /t:Publish /p:SelfContained=true で .NET を同梱する
+    （dotnet publish は C++ の ProjectReference をビルドできないので msbuild。手順は .github/workflows/release.yml）。
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- LibraryImport（P/Invoke のコードをコンパイル時に作る仕組み）が作るコードは unsafe を使う -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>DisplayRescue</AssemblyName>
+    <RootNamespace>DisplayRescue.Settings</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\display-rescue.ico</ApplicationIcon>
+
+    <!-- x64 だけ（C++ の DLL と合わせる）。ソリューションの x64 にそのまま対応する -->
+    <Platforms>x64</Platforms>
+    <Configurations>Debug;Release</Configurations>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+
+    <!-- 出力は C++ と同じ x64\<構成>\（DisplayRescueInterop.dll などと同じフォルダに並ぶ。配る zip では、それらは bin\ に分ける。Services/AppFiles.cs） -->
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\x64\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+
+    <!-- WPF の Fluent テーマ（ThemeMode）は .NET 10 ではまだ「試験的」扱いで、使うと警告 WPF0001 が出る -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <!-- 配る形（.NET 同梱、/p:SelfContained=true で publish）は、出力も中間ファイルも普段のビルドと分ける。
+       同じ x64\<構成>\ に出すと .NET 本体の DLL（hostfxr.dll など約 240 個）が普段の exe の隣に残り、
+       普段の exe が「.NET 同梱版」として起動しようとして「You must install or update .NET」で止まる。
+       中間ファイルも分けないと、同梱版の exe が「.NET が無い」で起動しない -->
+  <PropertyGroup Condition="'$(SelfContained)' == 'true'">
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\x64\$(Configuration)\selfcontained\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildThisFileDirectory)obj\selfcontained\$(Configuration)\</IntermediateOutputPath>
+  </PropertyGroup>
+
+  <!-- 版は src/Version.h の 1 か所だけ（C++ の .rc と同じ）。C# は #include できないので、ビルドのときに正規表現で数字を抜き出す -->
+  <PropertyGroup>
+    <DrVersionHeader>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\Version.h'))</DrVersionHeader>
+    <DrMajor>$([System.Text.RegularExpressions.Regex]::Match($(DrVersionHeader), '(?&lt;=#define DR_VERSION_MAJOR )\d+').Value)</DrMajor>
+    <DrMinor>$([System.Text.RegularExpressions.Regex]::Match($(DrVersionHeader), '(?&lt;=#define DR_VERSION_MINOR )\d+').Value)</DrMinor>
+    <DrPatch>$([System.Text.RegularExpressions.Regex]::Match($(DrVersionHeader), '(?&lt;=#define DR_VERSION_PATCH )\d+').Value)</DrPatch>
+    <Version>$(DrMajor).$(DrMinor).$(DrPatch)</Version>
+    <Product>DisplayRescue</Product>
+    <Description>DisplayRescue の設定</Description>
+    <Copyright>Copyright (c) thakaz</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ビルド順だけの指定（先に DLL を作る）。C++ のプロジェクトなので、参照としては使わない -->
+    <ProjectReference Include="..\..\DisplayRescueInterop.vcxproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- アイコンは exe の中に入れる（pack://application:,,,/Assets/... で読む） -->
+    <Resource Include="Assets\*.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 同梱のマスコット（assets/mascot。モデルとモーション）を exe の隣の mascot\ に置く（配る zip では bin\mascot\）。インストールのとき、まだ何も入っていなければ取り込む
+         （Services/MascotAssets.cs の ImportBundledAsync）。配る zip には release.yml が assets/mascot を直接写すので、publish には出さない
+         （出すと 1 ファイルの exe に入ってしまう） -->
+    <None Include="..\..\assets\mascot\**\*.vrm;..\..\assets\mascot\**\*.vrma" Link="mascot\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+</Project>

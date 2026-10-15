@@ -9,12 +9,12 @@
 //   DisplayRescueService.exe bind <action> <keys> [--force]
 //                                          → 管理者で実行。割り当てを書き込む（例: bind extend Ctrl+Alt+F9）。
 //                                            普段の入力を奪うキー（Ctrl も Alt も無い A など）は --force が要る
-//   DisplayRescueService.exe unbind <action>      → 管理者で実行。割り当てを外す
+//   DisplayRescueService.exe unbind <action>      → 管理者で実行。割り当てを解除する
 //   DisplayRescueService.exe watch [ハンドル]     → 割り当てたキーを待ち、押されたらその場で切り替える（手で動かすときはハンドルなし、Ctrl+C で終了。
 //                                            サービスは継承させた「止めて」のイベントの値を付けて起動する）
 //   DisplayRescueService.exe service              → SCM から起動される（手では実行しない）
 //   DisplayRescueService.exe install              → 管理者で実行。Program Filesにコピーしてサービスを登録・起動する。
-//   DisplayRescueService.exe uninstall            → 管理者で実行。サービスとキーの設定を削除し、Program Files の exe を消す
+//   DisplayRescueService.exe uninstall            → 管理者で実行。サービスと設定を削除し、Program Files の exe を消す
 //
 // 終了コード: 0 = 成功、それ以外 = Win32 エラーコード（引数の誤りは ERROR_BAD_ARGUMENTS (160)）
 
@@ -25,7 +25,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cwchar>           // std::wcstoul
 #include <format>
 #include <iostream>
 #include <string_view>
@@ -48,13 +47,13 @@ namespace {
 	constexpr std::wstring_view kUsage =
 		L"DisplayRescue " DR_VERSION_STRING L" — キー一発で画面構成を戻します(ログイン画面・ロック画面でも)\n"
 		L"\n"
-		L"インストールとキーの設定は、同じフォルダのDisplayRescue.exe(設定画面)からできます。\n"
+		L"インストールと設定は、zipを展開したフォルダのDisplayRescue.exe(設定アプリ)からできます。\n"
 		L"コマンドで行う場合:\n"
 		L"  DisplayRescueService install              管理者で実行。サービスとして登録し、キーで切り替えられるようにする\n"
-		L"  DisplayRescueService uninstall            管理者で実行。サービスとキーの設定を削除する\n"
+		L"  DisplayRescueService uninstall            管理者で実行。サービスと設定を削除する\n"
 		L"  DisplayRescueService bindings             キーの割り当てを表示する\n"
 		L"  DisplayRescueService bind <操作> <キー>   管理者で実行。割り当てを変える(例: bind clone Ctrl+Alt+F10、bind extend F13)\n"
-		L"  DisplayRescueService unbind <操作>        管理者で実行。割り当てを外す\n"
+		L"  DisplayRescueService unbind <操作>        管理者で実行。割り当てを解除する\n"
 		L"  DisplayRescueService <操作>               今すぐ切り替える\n"
 		L"  DisplayRescueService dump [all]           今の画面構成を表示する\n"
 		L"  DisplayRescueService version              バージョンを表示する\n"
@@ -97,7 +96,7 @@ namespace {
 		return topology;
 	}
 
-	//bind / unbind の後に呼ぶ。待ち受け役は起動時にしか割り当てを読まないので、サービスに置き直してもらう
+	// bind / unbind の後に呼ぶ。ホットキー監視プロセスは起動時にしか割り当てを読み込まないため、サービスに再起動を依頼する
 	void ApplyToService() {
 		if (service::RequestServiceReload()) {
 			std::wcout << L"サービスに反映しました。\n";
@@ -216,10 +215,9 @@ namespace {
 	{
 		HANDLE stopEvent = nullptr;
 		if (argc >= 3) {
-			wchar_t* end = nullptr;
-			const unsigned long value = std::wcstoul(argv[2], &end, 10); //10進で読む。endは読めなかった最初の文字を指す
-			if (end == argv[2] || *end != L'\0' || value == 0) return ERROR_BAD_ARGUMENTS;
-			stopEvent = ULongToHandle(value);	//継承したハンドルは親と同じ値のまま使える。
+			const auto handle = ParseInheritedHandle(argv[2]);
+			if (!handle) return ERROR_BAD_ARGUMENTS;
+			stopEvent = *handle;
 		}
 		return input::RunWatch(stopEvent);
 	}

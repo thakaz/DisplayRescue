@@ -15,6 +15,7 @@
 #include <thread>
 
 #include "common/Log.h"
+#include "common/Common.h"
 #include "config/Settings.h"
 #include "service/Service.h"
 
@@ -48,6 +49,15 @@ namespace {
 	bool SameFile(const fs::path& a, const fs::path& b) {
 		std::error_code ec;
 		return fs::equivalent(a, b, ec);
+	}
+
+	// サービスが今動いているか。更新に失敗したとき、もともと止まっていたサービスまで起動しないために使う。
+	bool IsServiceRunning(SC_HANDLE service) {
+		SERVICE_STATUS_PROCESS status{};
+		DWORD needed = 0;
+		THROW_IF_WIN32_BOOL_FALSE(QueryServiceStatusEx(
+			service, SC_STATUS_PROCESS_INFO, reinterpret_cast<BYTE*>(&status), sizeof(status), &needed));
+		return status.dwCurrentState != SERVICE_STOPPED;
 	}
 
 	//サービスが動いていれば止め、STOPPEDになるまで待つ。
@@ -90,10 +100,11 @@ namespace {
 		}
 	}
 
-	// 配布フォルダ（今動いている exe と同じフォルダ）の DisplayRescueService.exe を target にコピーする。
+	// 配布フォルダ（今動いている exe と同じフォルダ）の fileName（DisplayRescueService.exe など）をインストール先にコピーする。
 	// インストール先の exe から install したときは、コピー元とコピー先が同じなので何もしない。配布フォルダに無ければ ERROR_FILE_NOT_FOUND
-	void CopyServiceExe(const fs::path& target, const Progress& progress) {
-		const fs::path source = SelfPath().parent_path() / kServiceExe;
+	void CopyToInstallDirectory(std::wstring_view fileName, const Progress& progress) {
+		const fs::path source = SelfPath().parent_path() / fileName;
+		const fs::path target = rescue::service::InstallDirectory() / fileName;
 		if (SameFile(source, target)) return;
 
 		std::error_code ec;
@@ -200,28 +211,55 @@ void rescue::service::Install(const Progress& progress)
 	// 2. ログのフォルダを管理者と SYSTEM だけが書ける状態にする（SYSTEM のサービスがここに書くため）
 	rescue::SecureLogDirectory();
 
-	// 3. すでにサービスがあれば止める（動いている exe は上書きできない）
-	if (wil::unique_schandle existing{ OpenServiceW(manager.get(), kServiceName, kServiceAccess) }; existing) {
-		progress(L"動いているサービスを停止しています...");
-		StopServiceAndWait(existing.get(), 30s);
+	// 3. すでにサービスがあれば開く。更新前に動いていたかを覚え、途中で失敗したときだけ起動し直す。
+	wil::unique_schandle existing{ OpenServiceW(manager.get(), kServiceName, kServiceAccess) };
+	bool restartOnFailure = false;
+	if (existing) {
+		restartOnFailure = IsServiceRunning(existing.get());
 	}
 	else {
 		const DWORD error = GetLastError();
 		THROW_WIN32_IF(error, error != ERROR_SERVICE_DOES_NOT_EXIST);
 	}
 
-	// 4. 配布フォルダの DisplayRescueService.exe を Program Files にコピーする
-	const auto target = InstallDirectory() / kServiceExe;
-	CopyServiceExe(target, progress);
+	try {
+		if (existing) {
+			progress(L"動いているサービスを停止しています...");
+			StopServiceAndWait(existing.get(), 30s);
+		}
 
-	// 5. サービスを登録し、説明文と回復オプションを設定して起動する。パスは " で囲む（空白を含むため）
-	const auto service = CreateOrUpdateService(manager.get(), std::format(L"\"{}\" service", target.wstring()));
-	ConfigureService(service.get());
-	if (!StartServiceW(service.get(), 0, nullptr)) {
-		const DWORD error = GetLastError();
-		THROW_WIN32_IF(error, error != ERROR_SERVICE_ALREADY_RUNNING);
+		// 4. 配布フォルダの DisplayRescueService.exe とマスコット（DisplayRescueMascot.exe）を Program Files にコピーする。
+		// どちらも SYSTEM が動かすので、一般ユーザーが書き換えられない場所に置く
+		const auto target = InstallDirectory() / kServiceExe;
+		CopyToInstallDirectory(kServiceExe, progress);
+		CopyToInstallDirectory(kMascotExeName, progress);
+
+		// 5. サービスを登録し、説明文と回復オプションを設定して起動する。パスは " で囲む（空白を含むため）
+		const auto service = CreateOrUpdateService(manager.get(), std::format(L"\"{}\" service", target.wstring()));
+		ConfigureService(service.get());
+		if (!StartServiceW(service.get(), 0, nullptr)) {
+			const DWORD error = GetLastError();
+			THROW_WIN32_IF(error, error != ERROR_SERVICE_ALREADY_RUNNING);
+		}
+		restartOnFailure = false;
+		progress(L"サービスを登録して起動しました(Windowsの起動時に自動で起動します)");
 	}
-	progress(L"サービスを登録して起動しました(Windowsの起動時に自動で起動します)");
+	catch (...) {
+		// 更新前に動いていたサービスだけ、失敗後も使えるように戻す。再起動の失敗で元の例外を隠さない。
+		if (restartOnFailure && existing) {
+			if (StartServiceW(existing.get(), 0, nullptr)) {
+				rescue::Log(L"インストールに失敗したため、更新前に動いていたサービスを起動し直しました");
+			}
+			else {
+				const DWORD error = GetLastError();
+				if (error != ERROR_SERVICE_ALREADY_RUNNING) {
+					rescue::Log(std::format(L"インストール失敗後にサービスを起動し直せませんでした: {} ({})",
+						rescue::DescribeError(static_cast<LONG>(error)), error));
+				}
+			}
+		}
+		throw;
+	}
 }
 
 void rescue::service::Uninstall(const Progress& progress)
@@ -246,12 +284,13 @@ void rescue::service::Uninstall(const Progress& progress)
 		progress(L"サービスは登録されていません");
 	}
 
-	// 3. キーの割り当て（HKLM\SOFTWARE\DisplayRescue）を消す
+	// 3. 設定（HKLM\SOFTWARE\DisplayRescue。キーの割り当てとマスコット）を消す
 	config::DeleteAllSettings();
-	progress(L"キーの設定を削除しました");
+	progress(L"設定(キーの割り当てとマスコット)を削除しました");
 
-	// 4. Program Files の exe とフォルダを消す
+	// 4. Program Files の exe とフォルダを消す（マスコット → サービス本体の順。サービス本体は今動いている自分のことがある）
 	const auto directory = InstallDirectory();
+	DeleteOrScheduleOnReboot(directory / kMascotExeName);
 	if (DeleteOrScheduleOnReboot(directory / kServiceExe)) {
 		// フォルダは exe が消えた後に空になるので、exe → フォルダの順に予約する
 		MoveFileExW(directory.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
@@ -262,5 +301,6 @@ void rescue::service::Uninstall(const Progress& progress)
 		fs::remove(directory, ec);	// 空なら消す（ほかのファイルが置かれていたら残す）
 	}
 
-	progress(L"アンインストールしました(ログのC:\\ProgramData\\DisplayRescueは調査用に残しています。不要なら削除してください)");
+	// ProgramData（ログと、取り込んだマスコットのモデル・モーション）は残す。ログは調査用、マスコットは入れ直したときにそのまま使える
+	progress(L"アンインストールしました(C:\\ProgramData\\DisplayRescueのログとマスコットのファイルは残しています。不要なら削除してください)");
 }

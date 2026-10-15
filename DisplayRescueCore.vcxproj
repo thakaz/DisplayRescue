@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<!-- 共通部分の静的ライブラリ。CLI（DisplayRescueService.exe）と GUI の両方がリンクする。共通の設定は DisplayRescue.Common.props -->
+<!-- 共通部分の静的ライブラリ。DisplayRescueService.exe（サービス本体・CLI）、DisplayRescueInterop.dll（設定アプリが呼ぶ）、DisplayRescueMascot.exe（ログなど）がリンクする。共通の設定は DisplayRescue.Common.props -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -50,9 +50,11 @@
     <ClCompile Include="src\common\Log.cpp" />
     <ClCompile Include="src\config\Hotkey.cpp" />
     <ClCompile Include="src\config\Settings.cpp" />
+    <ClCompile Include="src\config\MascotSettings.cpp" />
     <ClCompile Include="src\input\Watcher.cpp" />
     <ClCompile Include="src\service\Installer.cpp" />
     <ClCompile Include="src\service\Service.cpp" />
+    <ClCompile Include="src\service\ResidentProcess.cpp" />
     <ClCompile Include="src\service\SessionLauncher.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -65,9 +67,11 @@
     <ClInclude Include="src\common\Log.h" />
     <ClInclude Include="src\config\Hotkey.h" />
     <ClInclude Include="src\config\Settings.h" />
+    <ClInclude Include="src\config\MascotSettings.h" />
     <ClInclude Include="src\input\Watcher.h" />
     <ClInclude Include="src\service\Installer.h" />
     <ClInclude Include="src\service\Service.h" />
+    <ClInclude Include="src\service\ResidentProcess.h" />
     <ClInclude Include="src\service\SessionLauncher.h" />
   </ItemGroup>
   <ItemGroup>

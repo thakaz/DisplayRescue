@@ -19,12 +19,27 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v3
 
-      - name: Restore NuGet packages (WIL)
-        run: msbuild DisplayRescue.slnx /t:restore /p:RestorePackagesConfig=true
+      # 設定アプリ（C# の WPF）は .NET 10 の SDK でビルドする（版は global.json）
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
 
-      # DisplayRescueCore.lib → DisplayRescue.exe（設定画面。利用者が開く）と DisplayRescueService.exe（サービス本体・CLI）
+      - name: Restore NuGet packages (WIL and the settings app)
+        run: msbuild DisplayRescue.slnx /t:restore /p:RestorePackagesConfig=true /p:Platform=x64
+
+      # DisplayRescueCore.lib → DisplayRescueService.exe（サービス本体・CLI）、DisplayRescueMascot.exe（マスコット）、
+      # DisplayRescueInterop.dll（設定アプリが呼ぶ）、そして設定アプリ（C#）
       - name: Build (Release x64)
         run: msbuild DisplayRescue.slnx /p:Configuration=Release /p:Platform=x64 /m
+
+      # 設定アプリを .NET 同梱の 1 ファイル（DisplayRescue.exe）にする。dotnet publish ではなく msbuild なのは、
+      # C++ の DLL（ProjectReference）を dotnet の MSBuild ではビルドできないため。
+      # 先に obj を消す: 上のビルド（.NET 同梱なし）の中間ファイルが残っていると、同梱したつもりの exe が「.NET が無い」で起動しない
+      - name: Publish the settings app (self-contained, single file)
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force src\settings\obj
+          msbuild src\settings\DisplayRescueSettings.csproj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 /p:SelfContained=true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true "/p:PublishDir=$PWD/publish/"
 
       - name: Read version
         id: version
@@ -45,7 +60,8 @@ jobs:
         run: |
           $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
             Where-Object FullName -like '*Hostx64\x64*' | Select-Object -First 1
-          foreach ($exe in 'x64\Release\DisplayRescueService.exe', 'x64\Release\DisplayRescue.exe') {
+          # C++ のもの（exe と DLL）。設定アプリは .NET なので対象外
+          foreach ($exe in 'x64\Release\DisplayRescueService.exe', 'x64\Release\DisplayRescueMascot.exe', 'x64\Release\DisplayRescueInterop.dll') {
             $deps = & $dumpbin.FullName /dependents $exe | Select-String '\.dll' | ForEach-Object { $_.Line.Trim() }
             Write-Host "$exe : $($deps -join ', ')"
             $bad = $deps | Where-Object { $_ -match '^(VCRUNTIME|MSVCP|UCRTBASE|api-ms-win-crt)' }
@@ -57,8 +73,12 @@ jobs:
         run: |
           $version = '${{ steps.version.outputs.version }}'
           $name = "DisplayRescue-$version-x64"
-          New-Item -ItemType Directory -Force "dist\$name" | Out-Null
-          Copy-Item x64\Release\DisplayRescueService.exe, x64\Release\DisplayRescue.exe, README.md, LICENSE "dist\$name"
+          # 利用者が開くのは DisplayRescue.exe だけなので、ほかのものは bin\ に分ける（設定アプリは bin\ を見る。src/settings/Services/AppFiles.cs）
+          New-Item -ItemType Directory -Force "dist\$name\bin" | Out-Null
+          Copy-Item publish\DisplayRescue.exe, README.md, LICENSE "dist\$name"
+          Copy-Item x64\Release\DisplayRescueInterop.dll, x64\Release\DisplayRescueService.exe, x64\Release\DisplayRescueMascot.exe "dist\$name\bin"
+          # 同梱のマスコット（モデルとモーション、出どころの README）。設定アプリがインストールのときに bin\mascot\ から取り込む
+          Copy-Item -Recurse assets\mascot "dist\$name\bin\mascot"
           Compress-Archive -Path "dist\$name\*" -DestinationPath "dist\$name.zip"
           $hash = (Get-FileHash "dist\$name.zip" -Algorithm SHA256).Hash.ToLower()
           # 改行は LF にする（Set-Content だと CRLF になり、sha256sum -c がファイル名の末尾の \r で失敗する）

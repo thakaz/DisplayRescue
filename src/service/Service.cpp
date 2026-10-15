@@ -8,25 +8,24 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <format>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include "common/Common.h"
 #include "common/Log.h"
+#include "config/MascotSettings.h"
+#include "service/ResidentProcess.h"
 #include "service/SessionLauncher.h"
 
+// Windows サービス本体。SCM との通信、セッション変更の振り分け、子プロセスの終了と再起動予定を処理する。
+// 常駐させる子プロセス（ホットキー監視プロセス・マスコット 2 つ）の起動・停止・再起動は ResidentProcess が管理する
 namespace {
 	using namespace rescue::service;
-
-	// 待ち受け役に「止めて」を送ってから終わるまで待つ上限。過ぎたら強制終了する
-	constexpr std::chrono::seconds kWatcherStopTimeout{ 5 };
-
-	// 待ち受け役を置けなかったとき・待ち受け役が自分で終わったときに置き直すまでの間隔。
-	// 失敗が続くたびに倍にし、上限で止める（設定ミスなどで毎回すぐ終わるときにログを埋めないため）
-	constexpr std::chrono::seconds kRetryFirst{ 5 };
-	constexpr std::chrono::seconds kRetryMax{ 300 };
 
 	// ServiceMain /ControlHandlerはSCMからCの関数として呼ばれ、自分のオブジェクトは渡してもらえない（ServiceMainにはcontext引数も無い）。
 	// そのためサービスの状態はここに一つだけ置く。
@@ -36,21 +35,15 @@ namespace {
 		DWORD checkPoint = 1;
 
 		wil::unique_event stopEvent;	//停止要求(手動リセット)
-		wil::unique_event workEvent;	//置き直し要求(自動リセット)
+		wil::unique_event workEvent;	// 再起動要求（自動リセット）
 
-		// セッション変更の通知で待ち受け役を置き直す要求。ログ用に最後の通知の種類とセッションも残す
+		// セッション変更通知によるホットキー監視プロセスの再起動要求。ログ用に最後の通知種別とセッションも記録する
 		std::atomic<bool>  placeRequested{ false };
 		std::atomic<DWORD> lastSessionEvent{ 0 };
 		std::atomic<DWORD> lastSessionId{ 0 };
 
-		// bind / unbind からの「割り当てを読み直して」（待ち受け役は起動時にしか読まないので、置き直して読ませる）
+		// bind / unbind からの設定再読み込み要求（ホットキー監視プロセスは起動時にしか読み込まないため、再起動して反映する）
 		std::atomic<bool>  reloadRequested{ false };
-
-		//ここから下は ServiceMain のスレッドだけが触る。
-		wil::unique_process_information watcher;	//うごいていなければ hProcessがnullptr
-		wil::unique_event watcherStopEvent;			//待ち受け役への「止めて」(手動リセット)
-		std::chrono::seconds retryDelay = kRetryFirst;	//次に置き直すまでの間隔
-		std::optional<std::chrono::steady_clock::time_point> retryAt;	//置き直す予定の時刻。予定がなければ nullopt
 	};
 
 	ServiceContext g_service;
@@ -69,10 +62,10 @@ namespace {
 		SetServiceStatus(g_service.statusHandle, &s);
 	}
 
-	// 待ち受け役を置き直すきっかけになるセッション変更の名前。それ以外は空
+	// ホットキー監視プロセスを再起動するセッション変更の名前。それ以外は空
 	//   CONSOLE_CONNECT: 物理コンソールにセッションがつながった（サインアウト後は新しい番号のセッションになる）
 	//   LOGON / LOCK / UNLOCK: 入力デスクトップが Default と Winlogon の間で入れ替わる
-	// サインアウト（LOGOFF）ではユーザーの待ち受け役が消されるので、「自分で終わった」として拾う
+	// サインアウト（LOGOFF）ではユーザー側のホットキー監視プロセスが終了するため、子プロセスの終了として検出する
 	std::wstring_view PlacementEventName(DWORD eventType) {
 		switch (eventType) {
 		case WTS_CONSOLE_CONNECT:	return L"コンソール接続";
@@ -102,8 +95,8 @@ namespace {
 			if (!PlacementEventName(eventType).empty()) {
 				const DWORD sessionId = static_cast<const WTSSESSION_NOTIFICATION*>(eventData)->dwSessionId;
 				// サインイン・ロック・ロック解除は、物理コンソールのセッションのものだけを見る。
-				// リモートデスクトップのセッションをロックしても、物理画面の入力デスクトップは変わらないので置き直さない
-				// (置き直すあいだはキーが一瞬効かなくなる)。コンソール接続は、セッションの番号が変わるので常に見る
+				// リモートデスクトップのセッションをロックしても、物理画面の入力デスクトップは変わらないため再起動しない
+				// （再起動中はキーが一時的に無効になる）。コンソール接続ではセッションIDが変わるため、常に処理する
 				if (eventType != WTS_CONSOLE_CONNECT && sessionId != WTSGetActiveConsoleSessionId()) {
 					return NO_ERROR;
 				}
@@ -124,91 +117,98 @@ namespace {
 		}
 	}
 
-	//待ち受け役を止める。動いていなければ何もしない。
-	//まず「止めて」のイベントで頼み、kWatcherStopTimeout 以内に終わらなければ強制終了する
-	void StopWatcher() {
-		if (!g_service.watcher.hProcess) return; //動いてないとき
-
-		g_service.watcherStopEvent.SetEvent();
-		DWORD wait = WaitForSingleObject(g_service.watcher.hProcess, static_cast<DWORD>(std::chrono::milliseconds(kWatcherStopTimeout).count()));
-		if (wait == WAIT_TIMEOUT) {
-			rescue::Log(L"待ち受け役が止まらないため強制終了します");
-			TerminateProcess(g_service.watcher.hProcess, ERROR_TIMEOUT);
-			wait = WaitForSingleObject(g_service.watcher.hProcess, INFINITE);
-		}
-
-		DWORD exitCode = 0;
-		GetExitCodeProcess(g_service.watcher.hProcess, &exitCode);
-		rescue::Log(std::format(L"待ち受け役が終了: {} ({})", rescue::DescribeError(static_cast<LONG>(exitCode)), exitCode));
-		g_service.watcher.reset();
-	}
-
-	//待ち受け役を入力デスクトップに起動する。動いていれば止めてから起動し直す（同じキーは 1 つしか登録できないため、必ず先に止める）。
-	//起動できたら true
-	bool StartWatcher() {
-		StopWatcher();
-
+	// マスコットを置くか。キャラクタは、設定（HKLM\SOFTWARE\DisplayRescue\Mascot の Enabled）がオンで、モデルのファイルがあるとき。
+	// 画面切り替えキーの案内（ShowShortcuts）がオンなら、キャラクターがオフでも DisplayRescueMascot.exe を起動する。
+	// 起動のたびに確認するため、設定アプリで保存すると制御コード 130 による再起動後すぐに反映される。
+	//
+	// 置くのはロック中（ログイン画面も）だけ。1 つで 200 MB ほど使うので、普段の作業中は 2 つとも止めておく
+	// （ロックしてから読み込むので、出てくるのは 2 秒ほど遅れる）。
+	//   「デスクトップにも出す」でキャラクタを出すときは、ロック画像用（Default デスクトップ）だけ普段も置く。
+	//   「常駐させる」（KeepResident）なら、2 つともいつも置く（ロックしてすぐ出る）
+	struct WantedMascots {
+		bool winlogon = false;	// パスワード欄用
+		bool lockImage = false;	// ロック画像用
+	};
+	WantedMascots WantedMascotsFor(bool locked) {
 		try {
-			g_service.watcherStopEvent.ResetEvent();
-
-			//子に渡すのは待つだけできる継承可能なコピー(SYNCHRONIZE)
-			//待ち受け役はユーザーの身分で動くこともあるので、イベントを立てたり戻したりはさせない。
-			wil::unique_handle childStopEvent;
-			THROW_IF_WIN32_BOOL_FALSE(
-				DuplicateHandle(GetCurrentProcess(), g_service.watcherStopEvent.get(), GetCurrentProcess(), childStopEvent.put(), SYNCHRONIZE, TRUE, 0));
-
-			//継承したハンドルは子でも同じ値になるので、その値をコマンドラインで教える。
-			g_service.watcher = StartInInputDesktop(std::format(L"watch {}", HandleToULong(childStopEvent.get())), childStopEvent.get());
-			rescue::Log(std::format(L"待ち受け役を起動(プロセス{}、コンソールセッション{})", g_service.watcher.dwProcessId, WTSGetActiveConsoleSessionId()));
-			return true;
-			//childStopEventはここで閉じる。子は継承した自分のコピーを持っている
+			const auto settings = rescue::config::LoadMascotSettings();
+			std::error_code error;
+			const bool character = settings.enabled && std::filesystem::is_regular_file(rescue::config::MascotModelPath(), error);
+			const bool anything = character || settings.showShortcuts;
+			// 常駐させる設定（KeepResident）なら、ロックしていなくても置いておく（ロックしてすぐ出る）
+			const bool now = locked || settings.keepResident;
+			return { anything && now, anything && (now || (character && settings.showOnDesktop)) };
 		}
 		catch (...) {
-			rescue::Log(std::format(L"待ち受け役を起動できませんでした： {}", rescue::DescribeHresult(wil::ResultFromCaughtException())));
-			return false;
+			return {};
 		}
 	}
 
-	//retryDelay 後に置き直す予定を入れ、次の間隔を倍にする（上限 kRetryMax）
-	void ScheduleRetry() {
-		g_service.retryAt = std::chrono::steady_clock::now() + g_service.retryDelay;
-		rescue::Log(std::format(L"{}秒後に待ち受け役を置き直します", g_service.retryDelay.count()));
-		//(std::min) と括弧で囲むのは、windows.h が min をマクロとして定義していて std::min( がマクロに化けるのを防ぐため
-		g_service.retryDelay = (std::min)(g_service.retryDelay * 2, kRetryMax);
-	}
-
-	//待ち受け役を置く。置けたら予定を消し、置けなければ置き直す予定を入れる
-	void PlaceWatcher() {
-		g_service.retryAt.reset();
-		if (!StartWatcher()) {
-			ScheduleRetry();
+	// 今ロック中か。ロック・解除の知らせならそれを信じ、それ以外は調べる。
+	// 調べられなければロック中とみなす（置いておけば、少なくとも出るべきときに出ないことはない）
+	bool LockedNow(std::optional<DWORD> sessionEvent) {
+		if (sessionEvent == static_cast<DWORD>(WTS_SESSION_LOCK)) return true;
+		if (sessionEvent == static_cast<DWORD>(WTS_SESSION_UNLOCK)) return false;
+		try {
+			return IsConsoleSessionLocked();
+		}
+		catch (...) {
+			return true;
 		}
 	}
 
-	//待ち受け役が自分で終わった（落ちた・サインアウトで消された・登録できるキーが無かった）。終了コードを残して置き直す予定を入れる
-	void OnWatcherExited() {
-		DWORD exitCode = 0;
-		GetExitCodeProcess(g_service.watcher.hProcess, &exitCode);
-		rescue::Log(std::format(L"待ち受け役が自分で終了しました: {} ({})", rescue::DescribeError(static_cast<LONG>(exitCode)), exitCode));
-		g_service.watcher.reset();
-		ScheduleRetry();
-	}
-
-	//置き直す予定の時刻までのミリ秒。予定がなければ INFINITE、過ぎていれば 0
-	DWORD MillisecondsUntilRetry() {
-		if (!g_service.retryAt) return INFINITE;
-		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(*g_service.retryAt - std::chrono::steady_clock::now());
+	// 最も近い再起動予定までのミリ秒。予定がなければ INFINITE、予定時刻を過ぎていれば 0
+	DWORD MillisecondsUntilRetry(std::span<ResidentProcess* const> residents) {
+		std::optional<std::chrono::steady_clock::time_point> earliest;
+		for (const ResidentProcess* resident : residents) {
+			if (const auto at = resident->RetryAt(); at && (!earliest || *at < *earliest)) earliest = at;
+		}
+		if (!earliest) return INFINITE;
+		const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(*earliest - std::chrono::steady_clock::now());
 		return left.count() > 0 ? static_cast<DWORD>(left.count()) : 0;
+	}
+
+	// マスコットを置く・止める。置かないもの（WantedMascotsFor）は止める。
+	// restart が true なら動作中でも再起動する（コンソール接続によるセッションID変更時・設定の再読み込み時）。false なら停止中のものだけ起動する
+	void PlaceMascots(ResidentProcess& winlogon, ResidentProcess& lockImage, bool locked, bool restart) {
+		const WantedMascots wanted = WantedMascotsFor(locked);
+		const auto place = [restart](ResidentProcess& mascot, bool want) {
+			mascot.ResetRetryDelay();
+			if (!want) mascot.Stop();
+			else if (restart || !mascot.IsRunning()) mascot.Start();
+		};
+		place(winlogon, wanted.winlogon);
+		place(lockImage, wanted.lockImage);
 	}
 
 	// サービス本体(SCMが別スレッドで呼ぶ)
 	void WINAPI ServiceMain(DWORD /*argc*/, LPWSTR* /*argv*/) {
+		// 置きっぱなしにする子。ServiceMain の中の変数なので、抜けるときに後片付けされる。
+		// ResidentProcess はイベントを作るときに例外を投げうるので、optional で「後から try の中で作る」
+		std::optional<ResidentProcess> watcher;
+		std::optional<ResidentProcess> mascotWinlogon;
+		std::optional<ResidentProcess> mascotLockImage;
 		try {
 			// ハンドラを登録する前にイベントを作る(登録直後から制御が届く可能性があるため)
 			// unique_event::createは失敗すると例外を投げる。
 			g_service.stopEvent.create(wil::EventOptions::ManualReset);
 			g_service.workEvent.create(wil::EventOptions::None);
-			g_service.watcherStopEvent.create(wil::EventOptions::ManualReset);
+
+			// 名前・サブコマンド・起動のしかた（Launcher は std::function なので、ラムダで渡す）
+			//   ホットキー監視プロセス: 入力デスクトップ（ロック中は SYSTEM 権限で Winlogon、それ以外はユーザー権限で Default）。入力デスクトップの変更に合わせて再起動する
+			//   マスコット(パスワード欄): いつも SYSTEM で Winlogon。ユーザーがいてもいなくても置く
+			//   マスコット(ロック画像): いつもユーザー＋UIAccess で Default。ロック画像（LockApp）の上に出る。ユーザーがいるときだけ
+			//   マスコットは別の exe（DisplayRescueMascot.exe）なので、サブコマンドは空にし、同じフォルダの kMascotExeName を起動する
+			//   （どちらのマスコットもロック中だけ。PlaceMascots）
+			watcher.emplace(L"ホットキー監視プロセス", L"watch", [](std::wstring_view arguments, HANDLE inheritHandle) {
+				return StartInInputDesktop(arguments, inheritHandle);
+			});
+			mascotWinlogon.emplace(L"マスコット(パスワード欄)", L"", [](std::wstring_view arguments, HANDLE inheritHandle) {
+				return StartInWinlogonDesktop(arguments, inheritHandle, kMascotExeName);
+			});
+			mascotLockImage.emplace(L"マスコット(ロック画像)", L"", [](std::wstring_view arguments, HANDLE inheritHandle) {
+				return StartInUserDesktopWithUiAccess(arguments, inheritHandle, kMascotExeName);
+			});
 
 			g_service.statusHandle = RegisterServiceCtrlHandlerExW(kServiceName, ControlHandler, nullptr);
 			// nullptrならGetLastErrorの値で例外を投げる。
@@ -219,44 +219,64 @@ namespace {
 			return;
 		}
 
+		// &*watcher: optional の中身（*watcher）のアドレス
+		ResidentProcess* const residents[] = { &*watcher, &*mascotWinlogon, &*mascotLockImage };
+
 		// 準備に時間のかかるものは無いので、START_PENDING を挟まずすぐ RUNNING にする
 		ReportStatus(SERVICE_RUNNING);
 		rescue::Log(std::format(L"サービス開始(コンソールセッション{})", WTSGetActiveConsoleSessionId()));
 
 		// 起動時に一度置く（再起動直後のログイン画面でも、何もしなくてもキーが効くように）
-		PlaceWatcher();
+		watcher->Start();
+		PlaceMascots(*mascotWinlogon, *mascotLockImage, LockedNow(std::nullopt), false);
 
-		// 停止要求・置き直し要求・待ち受け役の終了・置き直しの予定時刻を待つ
+		// 停止要求・再起動要求・子プロセスの終了・再起動予定時刻を待つ
 		// 同時に立っていたらindexの小さいほう(停止)が優先される
 		for (;;) {
-			// 待ち受け役が動いているときだけ、そのプロセスの終了も待つ（動いていないときの hProcess は nullptr で、待てない）
-			const HANDLE handles[] = { g_service.stopEvent.get(), g_service.workEvent.get(), g_service.watcher.hProcess };
-			const DWORD count = g_service.watcher.hProcess ? 3 : 2;
-			const DWORD wait = WaitForMultipleObjects(count, handles, FALSE, MillisecondsUntilRetry());
+			// 動いている子のプロセスだけ並べる。owners[i] は handles[2 + i] がどの子のものか
+			std::vector<HANDLE> handles{ g_service.stopEvent.get(), g_service.workEvent.get() };
+			std::vector<ResidentProcess*> owners;
+			for (ResidentProcess* resident : residents) {
+				if (resident->IsRunning()) {
+					handles.push_back(resident->ProcessHandle());
+					owners.push_back(resident);
+				}
+			}
+			const DWORD wait = WaitForMultipleObjects(static_cast<DWORD>(handles.size()), handles.data(), FALSE, MillisecondsUntilRetry(residents));
 
 			if (wait == WAIT_OBJECT_0 + 1) {
-				// セッション変更と読み直しの要求が重なっても、置き直すのは 1 回だけ
+				// セッション変更と再読み込み要求が重なっても、再起動は 1 回だけ行う
 				const bool sessionChanged = g_service.placeRequested.exchange(false);
 				const bool reload = g_service.reloadRequested.exchange(false);
+				std::optional<DWORD> sessionEvent;
 				if (sessionChanged) {
+					sessionEvent = g_service.lastSessionEvent;
 					rescue::Log(std::format(L"セッション変更: {}(セッション{}、コンソールセッション{})",
-						PlacementEventName(g_service.lastSessionEvent), g_service.lastSessionId.load(), WTSGetActiveConsoleSessionId()));
+						PlacementEventName(*sessionEvent), g_service.lastSessionId.load(), WTSGetActiveConsoleSessionId()));
 				}
-				if (reload) {
-					rescue::Log(L"キーの割り当ての読み直しを要求されました");
-				}
+				if (reload) rescue::Log(L"設定の読み直しを要求されました");
 				if (sessionChanged || reload) {
-					g_service.retryDelay = kRetryFirst;	// 状況が変わったので、間隔は最初から
-					PlaceWatcher();
+					// ホットキー監視プロセスは入力デスクトップの変更に合わせて再起動する。キーを早く有効にするため、マスコットより先に処理する
+					watcher->ResetRetryDelay();	// 状況が変わったので、間隔は最初から
+					watcher->Start();
+					// マスコットはロックしたら置き、解除したら止める。
+					// 動作中のプロセスを再起動するのは、コンソール接続（セッションIDの変更）と設定の再読み込みの場合
+					// （設定アプリ・bind / unbind から。マスコットは起動時にしか設定を読まないため。読み込みに 2 秒ほどかかる）
+					const bool restart = reload || sessionEvent == static_cast<DWORD>(WTS_CONSOLE_CONNECT);	// WTS_* は int のマクロなので DWORD にそろえる（optional との比較で符号の警告が出る）
+					PlaceMascots(*mascotWinlogon, *mascotLockImage, LockedNow(sessionEvent), restart);
 				}
 				continue;
 			}
-			if (wait == WAIT_OBJECT_0 + 2) {
-				OnWatcherExited();
+			if (wait >= WAIT_OBJECT_0 + 2 && wait < WAIT_OBJECT_0 + handles.size()) {
+				owners[wait - WAIT_OBJECT_0 - 2]->OnExited();
 				continue;
 			}
 			if (wait == WAIT_TIMEOUT) {
-				PlaceWatcher();
+				// 再起動予定時刻を過ぎた子プロセスを起動する
+				const auto now = std::chrono::steady_clock::now();
+				for (ResidentProcess* resident : residents) {
+					if (const auto at = resident->RetryAt(); at && *at <= now) resident->Start();
+				}
 				continue;
 			}
 			if (wait != WAIT_OBJECT_0) {
@@ -265,9 +285,9 @@ namespace {
 			break;	//停止要求 or 待機失敗
 		}
 
-		// 待ち受け役は最大 kWatcherStopTimeout 待つので、SCM にはそれより長い見込み時間を伝えておく
-		ReportStatus(SERVICE_STOP_PENDING, NO_ERROR, 10000);
-		StopWatcher();	// サービスがいなくなった後に待ち受け役だけ残さない
+		// 子は最大 5 秒ずつ待つので、SCM にはそれより長い見込み時間を伝えておく
+		ReportStatus(SERVICE_STOP_PENDING, NO_ERROR, 20000);
+		for (ResidentProcess* resident : residents) resident->Stop();	// サービスがいなくなった後に子だけ残さない
 		rescue::Log(L"サービス停止");
 		ReportStatus(SERVICE_STOPPED);
 	}
@@ -296,16 +316,23 @@ rescue::service::ServiceState rescue::service::QueryServiceState()
 	}
 }
 
+namespace {
+	//ユーザー定義のコントロールコードを送る。サービスがない・止まっているときはfalse
+	bool SendUserControl(DWORD control) {
+		//コントロールを送るだけなので、SCMには接続だけ、サービスにはSERVICE_USER_DEFINED_CONTROLだけを求める
+		wil::unique_schandle manager{ OpenSCManagerW(nullptr,nullptr,SC_MANAGER_CONNECT) };
+		if (!manager) return false;
+		wil::unique_schandle service{ OpenServiceW(manager.get(),kServiceName,SERVICE_USER_DEFINED_CONTROL) };
+		if (!service) return false;
+
+		SERVICE_STATUS status{};
+		return ControlService(service.get(), control, &status) != FALSE;	//止まっているとERROR_SERVICE_NOT_ACTIVEでFALSE
+	}
+}
+
 bool rescue::service::RequestServiceReload()
 {
-	// コントロールを送るだけなので、SCM には接続だけ、サービスには SERVICE_USER_DEFINED_CONTROL だけを求める
-	wil::unique_schandle manager{ OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT) };
-	if (!manager) return false;
-	wil::unique_schandle service{ OpenServiceW(manager.get(), kServiceName, SERVICE_USER_DEFINED_CONTROL) };
-	if (!service) return false;
-
-	SERVICE_STATUS status{};
-	return ControlService(service.get(), kControlReload, &status) != FALSE;	// 止まっていると ERROR_SERVICE_NOT_ACTIVE で FALSE
+	return SendUserControl(kControlReload);
 }
 
 int rescue::service::RunService()

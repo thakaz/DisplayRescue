@@ -1,0 +1,34 @@
+<!-- PowerToys の設定アプリと同じ形: 左にページの一覧、右にそのページ（Pages/ の UserControl） -->
+<Window x:Class="DisplayRescue.Settings.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DisplayRescueの設定"
+        Icon="Assets/display-rescue.ico"
+        Width="900" Height="620" MinWidth="680" MinHeight="460"
+        WindowStartupLocation="CenterScreen"
+        Closing="OnClosing">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ページの一覧。Tag は MainWindow.xaml.cs の _pages の鍵 -->
+        <ListBox x:Name="Pages" Grid.Column="0" Grid.Row="0" Margin="8" SelectionChanged="OnPageChanged">
+            <ListBoxItem Content="全般" Tag="General" />
+            <ListBoxItem Content="キーの割り当て" Tag="Hotkeys" />
+            <ListBoxItem Content="マスコット" Tag="Mascot" />
+        </ListBox>
+
+        <ScrollViewer Grid.Column="1" Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <ContentControl x:Name="PageHost" Margin="24,16" />
+        </ScrollViewer>
+
+        <!-- 下の帯: バージョン。Interop の DLL を読めたかどうかもここで分かる -->
+        <TextBlock x:Name="VersionText" Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1" Margin="16,8" Opacity="0.7" />
+    </Grid>
+</Window>

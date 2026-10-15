@@ -15,6 +15,8 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
+      <!-- /MP: 1 つのプロジェクトの中の .cpp を CPU のコア数だけ並べてコンパイルする（既定は 1 つずつ）。全部ビルドし直すとき 37 秒 → 13 秒（2026-10-10 測定） -->
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>

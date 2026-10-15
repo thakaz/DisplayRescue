@@ -6,7 +6,7 @@ namespace rescue {
 	//%ProgramData%\DisplayRescue\rescue.logに１行追記する。
 	void Log(std::wstring_view message) noexcept;
 
-	//WILが検出した失敗を全て↑のLogに流すようにする。
+	//WILが検出した失敗を全て↑のLogに書くようにする。
 	void RouteWilFailuresToLog();
 
 	//ログのフォルダ(%ProgramData%\DisplayRescue)を、管理者と SYSTEM だけが書ける状態にする(無ければ作る)。install から管理者で呼ぶ。
