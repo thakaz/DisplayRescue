@@ -81,28 +81,33 @@ public partial class HotkeysPage : UserControl
 
     private void BuildRows()
     {
-        foreach (var (topology, row) in AllTopologies.Select((t, i) => (t, i)))
+        // 1 行 1 枚のカード: アイコン・名前・入力欄・解除
+        foreach (var topology in AllTopologies)
         {
-            Rows.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(240) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Rows.Children.Add(new Border { Style = (Style)FindResource("Card"), Child = grid });
 
             var icon = new System.Windows.Controls.Image
             {
-                Width = IconSize, Height = IconSize, Margin = new Thickness(0, 4, 12, 4),
+                Width = IconSize, Height = IconSize, Margin = new Thickness(0, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center,
                 Tag = new Uri($"pack://application:,,,/Assets/{topology.ToString().ToLowerInvariant()}.ico"),
             };
             icon.DpiChanged += (_, e) => PickIcon(icon, e.NewDpi.DpiScaleX);   // 倍率の違うモニタに移ったら選び直す
             _icons.Add(icon);
             var name = new TextBlock { Text = DisplayName(topology), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0), MinWidth = 80 };
-            var box = new HotkeyBox { Margin = new Thickness(0, 4, 8, 4), VerticalContentAlignment = VerticalAlignment.Center };
+            var box = new HotkeyBox { Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
             box.HotkeyChanged += (_, _) => OnHotkeyChanged(topology);
-            var clear = new Button { Content = "解除", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(0, 4, 0, 4) };
+            var clear = new Button { Content = "解除", Padding = new Thickness(12, 4, 12, 4), VerticalAlignment = VerticalAlignment.Center };
             clear.Click += (_, _) => box.Hotkey = default;
 
             foreach (var (element, column) in new (UIElement, int)[] { (icon, 0), (name, 1), (box, 2), (clear, 3) })
             {
-                Grid.SetRow(element, row);
                 Grid.SetColumn(element, column);
-                Rows.Children.Add(element);
+                grid.Children.Add(element);
             }
             _boxes[topology] = box;
         }

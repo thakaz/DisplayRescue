@@ -2,26 +2,29 @@
 <UserControl x:Class="DisplayRescue.Settings.Pages.HotkeysPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel>
-        <TextBlock Text="キーの割り当て" FontSize="20" FontWeight="SemiBold" />
-        <TextBlock Margin="0,8,0,0" Opacity="0.8" TextWrapping="Wrap"
-                   Text="入力欄を選んで、割り当てたいキーを押してください。Backspaceで割り当てなしにします。ロック画面・ログイン画面でも効きます。" />
+    <DockPanel>
+        <!-- 下の帯: メッセージと保存。スクロールしても見える -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Footer}">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="既定に戻す" MinWidth="100" Padding="16,6" Click="OnResetDefaults" ToolTip="Ctrl+Alt+F8〜F11に戻します(保存は「保存」で)" />
+                    <Button Content="元に戻す" MinWidth="100" Padding="16,6" Margin="8,0,0,0" Click="OnRevert" ToolTip="保存してある割り当てに戻します" />
+                    <Button Content="保存" MinWidth="100" Padding="16,6" Margin="8,0,0,0" Click="OnSave" Style="{DynamicResource AccentButtonStyle}" />
+                </StackPanel>
+                <TextBlock x:Name="MessageText" VerticalAlignment="Center" Margin="0,0,16,0" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
 
-        <Grid x:Name="Rows" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" MaxWidth="320" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-        </Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="32,24" MaxWidth="1000">
+                <TextBlock Text="キーの割り当て" Style="{StaticResource PageTitle}" />
+                <TextBlock Style="{StaticResource Caption}" FontSize="13"
+                           Text="入力欄を選んで、割り当てたいキーを押してください。Backspaceで割り当てなしにします。ロック画面・ログイン画面でも効きます。" />
 
-        <TextBlock x:Name="MessageText" Margin="0,16,0,0" TextWrapping="Wrap" />
-
-        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
-            <Button Content="保存" MinWidth="100" Padding="16,6" Click="OnSave" />
-            <Button Content="元に戻す" MinWidth="100" Padding="16,6" Margin="8,0,0,0" Click="OnRevert" ToolTip="保存してある割り当てに戻します" />
-            <Button Content="既定に戻す" MinWidth="100" Padding="16,6" Margin="8,0,0,0" Click="OnResetDefaults" ToolTip="Ctrl+Alt+F8〜F11に戻します(保存は「保存」で)" />
-        </StackPanel>
-    </StackPanel>
+                <TextBlock Text="画面の切り替え" Style="{StaticResource SectionHeader}" />
+                <!-- 1 行 1 枚のカードを BuildRows が足す -->
+                <StackPanel x:Name="Rows" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
 </UserControl>

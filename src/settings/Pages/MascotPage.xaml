@@ -2,94 +2,156 @@
 <UserControl x:Class="DisplayRescue.Settings.Pages.MascotPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel>
-        <TextBlock Text="マスコット" FontSize="20" FontWeight="SemiBold" />
-        <TextBlock Margin="0,8,0,0" Opacity="0.8" TextWrapping="Wrap"
-                   Text="ロック画面に3Dモデル(VRM)と画面切り替えキーの案内を表示します。インストール時に同梱のモデルとモーションが追加されます。自分で用意したものにも変更できます。" />
-        <TextBlock x:Name="NotInstalledText" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"
-                   Text="先に「全般」でインストールしてください(モデルの置き場所をインストールで用意します)。" />
+    <DockPanel>
+        <!-- 下の帯: メッセージと保存。スクロールしても見える -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource Footer}">
+            <DockPanel>
+                <StackPanel x:Name="Buttons" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="元に戻す" MinWidth="100" Padding="16,6" Click="OnRevert" ToolTip="保存してある設定に戻します" />
+                    <Button Content="保存" MinWidth="100" Padding="16,6" Margin="8,0,0,0" Click="OnSave" Style="{DynamicResource AccentButtonStyle}" />
+                </StackPanel>
+                <TextBlock x:Name="MessageText" VerticalAlignment="Center" Margin="0,0,16,0" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
 
-        <StackPanel x:Name="Body">
-            <CheckBox x:Name="ShortcutsBox" Content="ロック画面に画面切り替えキーを表示する(各モニターの左上)" Margin="0,16,0,0" Checked="OnChanged" Unchecked="OnChanged"
-                      ToolTip="マスコットとは別に選べます。マスコットを出さなくても表示します" />
-            <CheckBox x:Name="EnabledBox" Content="ロック画面にマスコットを出す" Margin="0,8,0,0" Checked="OnChanged" Unchecked="OnChanged" />
-            <CheckBox x:Name="DesktopBox" Content="普段のデスクトップにも出す" Margin="0,8,0,0" Checked="OnChanged" Unchecked="OnChanged" />
-            <CheckBox x:Name="ResidentBox" Content="常駐させる(ロックしてすぐ出る。そのかわり普段もメモリを使う)" Margin="0,8,0,0" Checked="OnChanged" Unchecked="OnChanged"
-                      ToolTip="オフのときは、ロックしてから読み込むので、出るまで数秒かかります。普段はメモリを使いません" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="32,24" MaxWidth="1000">
+                <TextBlock Text="マスコット" Style="{StaticResource PageTitle}" />
+                <TextBlock Style="{StaticResource Caption}" FontSize="13"
+                           Text="ロック画面に3Dモデル(VRM)と画面切り替えキーの案内を表示します。インストール時に同梱のモデルとモーションが追加されます。自分で用意したものにも変更できます。" />
+                <TextBlock x:Name="NotInstalledText" Margin="0,12,0,0" TextWrapping="Wrap" Visibility="Collapsed"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                           Text="先に「全般」でインストールしてください(モデルの置き場所をインストールで用意します)。" />
 
-            <TextBlock Text="モデル" FontSize="16" FontWeight="SemiBold" Margin="0,24,0,0" />
-            <TextBlock x:Name="ModelText" Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.8" />
-            <Button Content="モデルを選ぶ..." HorizontalAlignment="Left" Padding="16,6" Margin="0,8,0,0" Click="OnChooseModel" />
+                <StackPanel x:Name="Body">
+                    <!-- 表示 -->
+                    <TextBlock Text="表示" Style="{StaticResource SectionHeader}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <CheckBox x:Name="ShortcutsBox" Content="ロック画面に画面切り替えキーを表示する(各モニターの左上)" Checked="OnChanged" Unchecked="OnChanged" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="28,2,0,0" Text="マスコットとは別に選べます。マスコットを出さなくても表示します。" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox x:Name="EnabledBox" Content="ロック画面にマスコットを出す" Checked="OnChanged" Unchecked="OnChanged" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox x:Name="DesktopBox" Content="普段のデスクトップにも出す" Checked="OnChanged" Unchecked="OnChanged" />
+                            <Border Style="{StaticResource Divider}" />
+                            <CheckBox x:Name="ResidentBox" Content="常駐させる" Checked="OnChanged" Unchecked="OnChanged" />
+                            <TextBlock Style="{StaticResource Caption}" Margin="28,2,0,0"
+                                       Text="ロックしてすぐ出ます。そのかわり普段もメモリを使います。オフのときは、ロックしてから読み込むので、出るまで数秒かかります。" />
+                        </StackPanel>
+                    </Border>
 
-            <TextBlock Text="モーション" FontSize="16" FontWeight="SemiBold" Margin="0,24,0,0" />
-            <TextBlock Margin="0,4,0,0" Opacity="0.7" TextWrapping="Wrap" Text="VRMA(.vrma)を追加すると、モーションをランダムに選び、滑らかに切り替えながら再生します。" />
-            <ListBox x:Name="MotionList" Height="140" Margin="0,8,0,0" SelectionMode="Extended" MouseDoubleClick="OnMotionDoubleClick"
-                     ToolTip="ダブルクリックで再生" />
-            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                <Button Content="追加..." Padding="16,6" Click="OnAddMotions" />
-                <Button Content="削除" Padding="16,6" Margin="8,0,0,0" Click="OnRemoveMotions" />
-                <Button Content="再生" Padding="16,6" Margin="24,0,0,0" Click="OnPreviewMotion"
-                        ToolTip="選んだモーションを、現在の配置と切り替え時間でデスクトップに1回再生します(保存前でも試せます)" />
-                <Button x:Name="StopPreviewButton" Content="止める" Padding="16,6" Margin="8,0,0,0" Click="OnStopPreview" IsEnabled="False" />
+                    <!-- モデル -->
+                    <TextBlock Text="モデル" Style="{StaticResource SectionHeader}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ModelText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0" />
+                            <Button Grid.Column="1" Content="モデルを選ぶ..." Padding="16,6" VerticalAlignment="Center" Click="OnChooseModel" />
+                        </Grid>
+                    </Border>
+
+                    <!-- モーション -->
+                    <TextBlock Text="モーション" Style="{StaticResource SectionHeader}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Caption}" Text="VRMA(.vrma)を追加すると、モーションをランダムに選び、滑らかに切り替えながら再生します。ダブルクリックで再生します。" />
+                            <ListBox x:Name="MotionList" Height="160" Margin="0,8,0,0" SelectionMode="Extended" MouseDoubleClick="OnMotionDoubleClick"
+                                     BorderThickness="1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="追加..." Padding="16,6" Click="OnAddMotions" />
+                                <Button Content="削除" Padding="16,6" Margin="8,0,0,0" Click="OnRemoveMotions" />
+                                <Button Content="再生" Padding="16,6" Margin="24,0,0,0" Click="OnPreviewMotion"
+                                        ToolTip="選んだモーションを、現在の配置と切り替え時間でデスクトップに1回再生します(保存前でも試せます)" />
+                                <Button x:Name="StopPreviewButton" Content="止める" Padding="16,6" Margin="8,0,0,0" Click="OnStopPreview" IsEnabled="False" />
+                            </StackPanel>
+
+                            <Border Style="{StaticResource Divider}" />
+
+                            <!-- 待機モーション -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="待機モーション" />
+                                    <TextBlock x:Name="IdleText" Margin="0,2,0,0" Style="{StaticResource Caption}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="選ぶ..." Padding="12,4" Click="OnChooseIdle"
+                                            ToolTip="待機中にずっと繰り返すモーション(.vrma)。上のモーションとは別に置きます" />
+                                    <Button Content="削除" Padding="12,4" Margin="8,0,0,0" Click="OnRemoveIdle" />
+                                    <Button Content="再生" Padding="12,4" Margin="8,0,0,0" Click="OnPreviewIdle" ToolTip="待機モーションを1回再生します" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- タイミング: ラベル・スライダー・値の 3 列 -->
+                    <TextBlock Text="タイミング" Style="{StaticResource SectionHeader}" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="280" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="モーションの間隔" VerticalAlignment="Center" />
+                            <Slider x:Name="IntervalSlider" Grid.Row="0" Grid.Column="1" Minimum="5" Maximum="600" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    VerticalAlignment="Center" ValueChanged="OnSliderChanged" />
+                            <TextBlock x:Name="IntervalText" Grid.Row="0" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="60" />
+
+                            <Border Grid.Row="1" Grid.ColumnSpan="3" Style="{StaticResource Divider}" />
+
+                            <TextBlock Grid.Row="2" Text="動作への切り替え時間" VerticalAlignment="Center" />
+                            <Slider x:Name="FadeSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="3000" TickFrequency="100" IsSnapToTickEnabled="True"
+                                    VerticalAlignment="Center" ValueChanged="OnSliderChanged" />
+                            <TextBlock x:Name="FadeText" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="60" />
+
+                            <Border Grid.Row="3" Grid.ColumnSpan="3" Style="{StaticResource Divider}" />
+
+                            <TextBlock Grid.Row="4" Text="待機への切り替え時間" VerticalAlignment="Center" />
+                            <Slider x:Name="IdleFadeSlider" Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="3000" TickFrequency="100" IsSnapToTickEnabled="True"
+                                    VerticalAlignment="Center" ValueChanged="OnSliderChanged" />
+                            <TextBlock x:Name="IdleFadeText" Grid.Row="4" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="60" />
+                        </Grid>
+                    </Border>
+
+                    <!-- 配置 -->
+                    <TextBlock Text="配置" Style="{StaticResource SectionHeader}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="PlacementText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="EditPlacementButton" Content="配置を調整..." Padding="12,4" Click="OnEditPlacement"
+                                            ToolTip="マスコットを画面に出して、見ながら位置と大きさと向きを決めます" />
+                                    <Button Content="既定の配置" Padding="12,4" Margin="8,0,0,0" Click="OnResetPlacement" ToolTip="右下・画面の高さの45%・正面に戻します(保存は「保存」で)" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Style="{StaticResource Divider}" />
+                            <TextBlock Style="{StaticResource Caption}"
+                                       Text="調整中は、左ドラッグで移動、ホイールで大きさ(マウスの所を中心に)、右ドラッグで回す、Rで回転を戻す。Enterで保存、Escでやめます。画面からはみ出してもかまいません(顔だけアップなど)。" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </StackPanel>
-
-            <Grid Margin="0,16,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" MaxWidth="320" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="待機モーション" VerticalAlignment="Center" Margin="0,4,16,4" />
-                <StackPanel Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,4">
-                    <TextBlock x:Name="IdleText" VerticalAlignment="Center" Opacity="0.8" Margin="0,0,12,0" />
-                    <Button Content="選ぶ..." Padding="12,4" Click="OnChooseIdle"
-                            ToolTip="待機中にずっと繰り返すモーション(.vrma)。上のモーションとは別に置きます" />
-                    <Button Content="削除" Padding="12,4" Margin="8,0,0,0" Click="OnRemoveIdle" />
-                    <Button Content="再生" Padding="12,4" Margin="8,0,0,0" Click="OnPreviewIdle" ToolTip="待機モーションを1回再生します" />
-                </StackPanel>
-
-                <TextBlock Grid.Row="1" Text="モーションの間隔" VerticalAlignment="Center" Margin="0,4,16,4" />
-                <Slider x:Name="IntervalSlider" Grid.Row="1" Grid.Column="1" Minimum="5" Maximum="600" TickFrequency="5" IsSnapToTickEnabled="True"
-                        VerticalAlignment="Center" Margin="0,4" ValueChanged="OnSliderChanged" />
-                <TextBlock x:Name="IntervalText" Grid.Row="1" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="60" />
-
-                <TextBlock Grid.Row="2" Text="動作への切り替え時間" VerticalAlignment="Center" Margin="0,4,16,4" />
-                <Slider x:Name="FadeSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="3000" TickFrequency="100" IsSnapToTickEnabled="True"
-                        VerticalAlignment="Center" Margin="0,4" ValueChanged="OnSliderChanged" />
-                <TextBlock x:Name="FadeText" Grid.Row="2" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="60" />
-
-                <TextBlock Grid.Row="3" Text="待機への切り替え時間" VerticalAlignment="Center" Margin="0,4,16,4" />
-                <Slider x:Name="IdleFadeSlider" Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="3000" TickFrequency="100" IsSnapToTickEnabled="True"
-                        VerticalAlignment="Center" Margin="0,4" ValueChanged="OnSliderChanged" />
-                <TextBlock x:Name="IdleFadeText" Grid.Row="3" Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0" MinWidth="60" />
-
-                <TextBlock Grid.Row="4" Text="配置" VerticalAlignment="Top" Margin="0,8,16,4" />
-                <StackPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,4">
-                    <TextBlock x:Name="PlacementText" TextWrapping="Wrap" Opacity="0.8" />
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <Button x:Name="EditPlacementButton" Content="配置を調整..." Padding="12,4" Click="OnEditPlacement"
-                                ToolTip="マスコットを画面に出して、見ながら位置と大きさと向きを決めます" />
-                        <Button Content="既定の配置" Padding="12,4" Margin="8,0,0,0" Click="OnResetPlacement" ToolTip="右下・画面の高さの45%・正面に戻します(保存は「保存」で)" />
-                    </StackPanel>
-                    <TextBlock Margin="0,8,0,0" Opacity="0.7" TextWrapping="Wrap"
-                               Text="調整中は、左ドラッグで移動、ホイールで大きさ(マウスの所を中心に)、右ドラッグで回す、Rで回転を戻す。Enterで保存、Escでやめます。画面からはみ出してもかまいません(顔だけアップなど)。" />
-                </StackPanel>
-            </Grid>
-        </StackPanel>
-
-        <TextBlock x:Name="MessageText" Margin="0,16,0,0" TextWrapping="Wrap" />
-
-        <StackPanel x:Name="Buttons" Orientation="Horizontal" Margin="0,16,0,0">
-            <Button Content="保存" MinWidth="100" Padding="16,6" Click="OnSave" />
-            <Button Content="元に戻す" MinWidth="100" Padding="16,6" Margin="8,0,0,0" Click="OnRevert" ToolTip="保存してある設定に戻します" />
-        </StackPanel>
-    </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
 </UserControl>

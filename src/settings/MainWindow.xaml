@@ -4,31 +4,34 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="DisplayRescueの設定"
         Icon="Assets/display-rescue.ico"
-        Width="900" Height="620" MinWidth="680" MinHeight="460"
+        Width="960" Height="680" MinWidth="720" MinHeight="480"
         WindowStartupLocation="CenterScreen"
         Closing="OnClosing">
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="220" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
 
-        <!-- ページの一覧。Tag は MainWindow.xaml.cs の _pages の鍵 -->
-        <ListBox x:Name="Pages" Grid.Column="0" Grid.Row="0" Margin="8" SelectionChanged="OnPageChanged">
-            <ListBoxItem Content="全般" Tag="General" />
-            <ListBoxItem Content="キーの割り当て" Tag="Hotkeys" />
-            <ListBoxItem Content="マスコット" Tag="Mascot" />
-        </ListBox>
+        <!-- 左: ページの一覧と、下にバージョン -->
+        <DockPanel Grid.Column="0">
+            <!-- バージョン。Interop の DLL を読めたかどうかもここで分かる -->
+            <TextBlock x:Name="VersionText" DockPanel.Dock="Bottom" Margin="16,8,16,12" Style="{StaticResource Caption}" />
+            <!-- Tag は MainWindow.xaml.cs の _pages の鍵 -->
+            <ListBox x:Name="Pages" Margin="8,8,8,0" Background="Transparent" BorderThickness="0" SelectionChanged="OnPageChanged">
+                <ListBoxItem Content="全般" Tag="General" Padding="12,8" />
+                <ListBoxItem Content="キーの割り当て" Tag="Hotkeys" Padding="12,8" />
+                <ListBoxItem Content="マスコット" Tag="Mascot" Padding="12,8" />
+            </ListBox>
+        </DockPanel>
 
-        <ScrollViewer Grid.Column="1" Grid.Row="0" VerticalScrollBarVisibility="Auto">
-            <ContentControl x:Name="PageHost" Margin="24,16" />
-        </ScrollViewer>
-
-        <!-- 下の帯: バージョン。Interop の DLL を読めたかどうかもここで分かる -->
-        <TextBlock x:Name="VersionText" Grid.Column="0" Grid.ColumnSpan="2" Grid.Row="1" Margin="16,8" Opacity="0.7" />
+        <!-- 右: ページ。一覧とは背景を変え、左上だけ角を丸めて一段上に重ねたように見せる（WinUI の NavigationView の形）。
+             スクロールと下の帯はページ側が持つ -->
+        <Border Grid.Column="1"
+                Background="{DynamicResource LayerFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1,1,0,0" CornerRadius="8,0,0,0">
+            <ContentControl x:Name="PageHost" />
+        </Border>
     </Grid>
 </Window>
